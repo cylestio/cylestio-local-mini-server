@@ -13,6 +13,7 @@ from app.models.agent import Agent
 from app.models.event import Event
 from app.models.session import Session
 from app.transformers.event_transformer import EventTransformer
+from app.business_logic.event_processor import EventProcessor
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -98,6 +99,19 @@ async def process_event(event_data: Dict[str, Any], session: AsyncSession):
             )
             session.add(event)
             await session.flush()  # Flush to get the ID
+            
+            # Process through business logic layer
+            try:
+                # Create event processor
+                event_processor = EventProcessor()
+                
+                # Process the event with the business logic layer
+                await event_processor.process_event(event, session)
+                
+                logger.info(f"Event {event.id} processed through business logic layer")
+            except Exception as e:
+                logger.error(f"Error processing event {event.id} through business logic layer: {str(e)}")
+                # Continue anyway, we'll still commit the event
             
             # Find related event if this is a finish event
             if event_type in ["LLM_call_finish", "call_finish"]:

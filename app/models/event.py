@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, DateTime, Integer, ForeignKey, Text, JSON, Float
+from sqlalchemy import Column, String, DateTime, Integer, ForeignKey, Text, JSON, Float, Boolean
 from sqlalchemy.orm import relationship
 import datetime
 
@@ -34,8 +34,18 @@ class Event(Base):
     caller_line = Column(Integer, nullable=True)
     caller_function = Column(String, nullable=True)
     
+    # Track whether this event has been processed by the business logic layer
+    is_processed = Column(Boolean, nullable=False, default=False, index=True)
+    
     # Relationships
     agent = relationship("Agent", back_populates="events")
+    
+    # New relationships to normalized data models
+    token_usage = relationship("TokenUsage", back_populates="event", uselist=False, cascade="all, delete-orphan")
+    performance_metrics = relationship("PerformanceMetric", back_populates="event", cascade="all, delete-orphan")
+    security_alerts = relationship("SecurityAlert", back_populates="event", cascade="all, delete-orphan")
+    content_analysis = relationship("ContentAnalysis", back_populates="event", cascade="all, delete-orphan")
+    framework_details = relationship("FrameworkDetails", back_populates="event", uselist=False, cascade="all, delete-orphan")
     
     def __repr__(self):
         return f"<Event {self.event_type} at {self.timestamp}>" 

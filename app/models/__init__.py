@@ -2,6 +2,21 @@ from app.models.base import Base
 from app.models.agent import Agent
 from app.models.event import Event
 from app.models.session import Session
+from app.models.token_usage import TokenUsage
+from app.models.performance_metric import PerformanceMetric
+from app.models.security_alert import SecurityAlert
+from app.models.content_analysis import ContentAnalysis
+from app.models.framework_details import FrameworkDetails
 
 # Export all models
-__all__ = ["Base", "Agent", "Event", "Session"] 
+__all__ = [
+    "Base", 
+    "Agent", 
+    "Event", 
+    "Session",
+    "TokenUsage",
+    "PerformanceMetric",
+    "SecurityAlert",
+    "ContentAnalysis",
+    "FrameworkDetails"
+] 

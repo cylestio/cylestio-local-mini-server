@@ -1,12 +1,25 @@
 """
-Business Logic package for the Cylestio Mini-Local Server.
+Business logic module for extracting insights and calculating metrics.
 
-This package provides the business logic layer for the Cylestio Mini-Local Server, 
-including metrics calculation, insights extraction, and analytics capabilities.
+This module provides the business logic layer for extracting insights
+and calculating metrics from event data.
 """
 
-from app.business_logic.metrics import BaseMetricCalculator, metric_registry
-from app.business_logic.insights import BaseInsightExtractor, insight_registry
+from app.business_logic.base import (
+    BusinessLogicLayer, 
+    BaseMetricCalculator, 
+    BaseInsightExtractor,
+    metric_registry,
+    insight_registry
+)
+
+from app.business_logic.extractors import (
+    BaseExtractor,
+    ExtractorRegistry,
+    extractor_registry
+)
+
+from app.business_logic.event_processor import EventProcessor
 
 # Define the BusinessLogicLayer class for integrating all components
 class BusinessLogicLayer:
@@ -110,10 +123,13 @@ business_logic = BusinessLogicLayer()
 
 # Export key components
 __all__ = [
-    "business_logic",
     "BusinessLogicLayer",
     "BaseMetricCalculator",
+    "BaseInsightExtractor",
     "metric_registry",
-    "BaseInsightExtractor", 
-    "insight_registry"
+    "insight_registry",
+    "BaseExtractor",
+    "ExtractorRegistry",
+    "extractor_registry",
+    "EventProcessor"
 ]
