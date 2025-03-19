@@ -5,7 +5,7 @@ This module provides insight extractors for agent health and activity metrics.
 """
 
 from typing import Dict, Any, Optional, List
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, UTC
 from collections import Counter
 from sqlalchemy.orm import Session
 
@@ -47,10 +47,10 @@ class AgentHealthInsightExtractor(BaseInsightExtractor):
         # Set default time range if not provided
         if not start_time:
             # Default to last day if no start time
-            start_time = datetime.utcnow() - timedelta(days=1)
+            start_time = datetime.now(UTC) - timedelta(days=1)
         
         if not end_time:
-            end_time = datetime.utcnow()
+            end_time = datetime.now(UTC)
         
         # Calculate metrics needed for insights
         response_time_calculator = ResponseTimeCalculator()
@@ -279,10 +279,10 @@ class AgentActivityInsightExtractor(BaseInsightExtractor):
         # Set default time range if not provided
         if not start_time:
             # Default to last week if no start time
-            start_time = datetime.utcnow() - timedelta(days=7)
+            start_time = datetime.now(UTC) - timedelta(days=7)
         
         if not end_time:
-            end_time = datetime.utcnow()
+            end_time = datetime.now(UTC)
         
         # Get time format string based on interval
         if interval == "hour":

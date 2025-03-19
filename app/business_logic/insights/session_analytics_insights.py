@@ -5,7 +5,7 @@ This module provides insight extractors for session-level analytics.
 """
 
 from typing import Dict, Any, Optional, List
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, UTC
 import statistics
 from collections import Counter
 from sqlalchemy.orm import Session
@@ -44,10 +44,10 @@ class SessionTrendsInsightExtractor(BaseInsightExtractor):
         # Set default time range if not provided
         if not start_time:
             # Default to last 30 days if no start time
-            start_time = datetime.utcnow() - timedelta(days=30)
+            start_time = datetime.now(UTC) - timedelta(days=30)
         
         if not end_time:
-            end_time = datetime.utcnow()
+            end_time = datetime.now(UTC)
         
         # Get all events
         events = self.get_filtered_events(
@@ -238,10 +238,10 @@ class UserBehaviorInsightExtractor(BaseInsightExtractor):
         # Set default time range if not provided
         if not start_time:
             # Default to last 30 days if no start time
-            start_time = datetime.utcnow() - timedelta(days=30)
+            start_time = datetime.now(UTC) - timedelta(days=30)
         
         if not end_time:
-            end_time = datetime.utcnow()
+            end_time = datetime.now(UTC)
         
         # Get all events
         events = self.get_filtered_events(

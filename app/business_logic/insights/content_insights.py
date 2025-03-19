@@ -5,7 +5,7 @@ This module provides insight extractors for content analytics.
 """
 
 from typing import Dict, Any, Optional, List
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, UTC
 import statistics
 from collections import Counter, defaultdict
 from sqlalchemy.orm import Session
@@ -46,10 +46,10 @@ class ContentUsageInsightExtractor(BaseInsightExtractor):
         # Set default time range if not provided
         if not start_time:
             # Default to last 7 days if no start time
-            start_time = datetime.utcnow() - timedelta(days=7)
+            start_time = datetime.now(UTC) - timedelta(days=7)
         
         if not end_time:
-            end_time = datetime.utcnow()
+            end_time = datetime.now(UTC)
         
         # Get model requests and responses
         requests = self.get_filtered_events(
@@ -357,10 +357,10 @@ class ContentAnalyticsInsightExtractor(BaseInsightExtractor):
         # Set default time range if not provided
         if not start_time:
             # Default to last 7 days if no start time
-            start_time = datetime.utcnow() - timedelta(days=7)
+            start_time = datetime.now(UTC) - timedelta(days=7)
         
         if not end_time:
-            end_time = datetime.utcnow()
+            end_time = datetime.now(UTC)
         
         # Get model requests and responses
         requests = self.get_filtered_events(

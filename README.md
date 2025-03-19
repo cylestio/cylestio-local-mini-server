@@ -2,13 +2,49 @@
 
 A lightweight server for collecting, storing, and querying Cylestio monitoring data.
 
-## Architecture
+## 📋 Contents
+
+- [Quick Start](#quick-start)
+- [Architecture](#architecture)
+- [Project Structure](#project-structure)
+- [Setup and Installation](#setup-and-installation)
+- [Configuration](#configuration)
+- [Running the Server](#running-the-server)
+- [API Endpoints](#api-endpoints)
+- [Database Schema](#database-schema)
+- [Testing](#testing)
+- [Troubleshooting](#troubleshooting)
+- [Contributing](#contributing)
+
+## 🚀 Quick Start
+
+The fastest way to get Cylestio running is with the following commands:
+
+```bash
+# Clone the repository
+git clone https://github.com/cylestio/cylestio-local-mini-server.git
+cd cylestio-local-mini-server
+
+# Create a virtual environment
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Start the server
+uvicorn app.main:app --reload
+```
+
+The server will be available at http://localhost:8000 with API documentation at http://localhost:8000/docs.
+
+## 🏗️ Architecture
 
 - **Python Monitoring SDK** sends telemetry via REST API to Mini-Local Server
 - **Mini-Local Server** processes and stores data in SQLite database
 - **Dashboard** queries the Mini-Local Server via REST API
 
-## Project Structure
+## 📁 Project Structure
 
 ```
 cylestio-local-mini-server/
@@ -22,44 +58,56 @@ cylestio-local-mini-server/
 │       └── integration/  - End-to-end integration tests
 ├── data/               - SQLite database files (created at runtime)
 ├── resources/          - Sample data and resources
-└── Makefile            - Common tasks automation
+├── run_tests.sh        - Test runner script
+└── requirements.txt    - Project dependencies
 ```
 
-## Quick Start with Make
+## ⚙️ Setup and Installation
 
-We provide a Makefile to simplify common tasks. To see all available commands:
+### Prerequisites
 
-```bash
-make help
-```
+- Python 3.8 or higher
+- pip (Python package manager)
+- Git (for cloning the repository)
 
-Setup your environment, install dependencies, and run the server:
+### Installation Steps
 
-```bash
-make setup
-make run
-```
+1. **Clone the repository**
 
-## Setup and Installation
-
-1. Clone the repository:
    ```bash
    git clone https://github.com/cylestio/cylestio-local-mini-server.git
    cd cylestio-local-mini-server
    ```
 
-2. Create a virtual environment:
+2. **Create and activate a virtual environment**
+
+   **Linux/macOS:**
    ```bash
    python -m venv venv
-   source venv/bin/activate  # On Windows: venv\Scripts\activate
+   source venv/bin/activate
    ```
 
-3. Install dependencies:
+   **Windows:**
+   ```cmd
+   python -m venv venv
+   venv\Scripts\activate
+   ```
+
+3. **Install dependencies**
+
    ```bash
    pip install -r requirements.txt
    ```
 
-## Database Configuration
+4. **Verify installation**
+
+   ```bash
+   python -c "import fastapi, uvicorn, sqlalchemy, aiosqlite"
+   ```
+
+## ⚙️ Configuration
+
+### Database Location
 
 The server automatically configures the database location based on your operating system:
 
@@ -69,30 +117,53 @@ The server automatically configures the database location based on your operatin
 
 For testing purposes, a separate database is created at `./data/test_cylestio.db`.
 
+### Override Database Location
+
 You can override the database location by setting the `CYLESTIO_DB_PATH` environment variable:
 
+**Linux/macOS:**
 ```bash
-# Linux/macOS
 export CYLESTIO_DB_PATH=/path/to/custom/database.db
+```
 
-# Windows
+**Windows:**
+```cmd
 set CYLESTIO_DB_PATH=C:\path\to\custom\database.db
 ```
 
-## Running the Server
+### Other Environment Variables
 
-Start the development server:
+- `CYLESTIO_TEST_MODE`: Set to "true" to use test configurations
+- `CYLESTIO_RESET_TEST_DB`: Set to "true" to drop and recreate database tables during test
+- `CYLESTIO_PRESERVE_TEST_DB`: Set to "true" to keep the test database after tests complete
+
+## 🚀 Running the Server
+
+### Development Mode
+
+Start the development server with automatic reloading:
+
 ```bash
 uvicorn app.main:app --reload
 ```
 
 The server will be available at http://localhost:8000.
 
-API documentation is available at:
+### Production Mode
+
+For production deployment, run:
+
+```bash
+uvicorn app.main:app --host 0.0.0.0 --port 8000
+```
+
+### API Documentation
+
+Built-in API documentation is available at:
 - Swagger UI: http://localhost:8000/docs
 - ReDoc: http://localhost:8000/redoc
 
-## API Endpoints
+## 🔌 API Endpoints
 
 ### Telemetry Ingestion
 
@@ -117,7 +188,7 @@ API documentation is available at:
 - `GET /api/metrics/{agent_id}/event_types` - Get event type distribution for an agent
 - `GET /api/metrics/{agent_id}/latency` - Get latency metrics for an agent
 
-## Database Schema
+## 🗄️ Database Schema
 
 The system uses SQLAlchemy ORM with SQLite for data storage. Key tables:
 
@@ -125,67 +196,82 @@ The system uses SQLAlchemy ORM with SQLite for data storage. Key tables:
 - **events** - Telemetry events from agents
 - **sessions** - Conversation sessions and interactions
 
-## Running Tests
+## 🧪 Testing
 
-Run all tests:
+### Using the Test Runner Script
+
+The `run_tests.sh` script provides convenient options for running tests:
+
 ```bash
-make test
+# Show test options
+./run_tests.sh
+
+# Run all tests
+./run_tests.sh all
+
+# Run unit tests only (in-memory database)
+./run_tests.sh unit
+
+# Run integration tests only (file-based database)
+./run_tests.sh integration
+
+# Run tests that use preserved database
+./run_tests.sh preserved
+
+# Clean up test database files
+./run_tests.sh clean
+
+# Run tests in verbose mode
+./run_tests.sh unit -v
 ```
 
-Run unit tests:
+### Manual Test Execution
+
+If you prefer to run tests directly with pytest:
+
 ```bash
-make test-unit
+# Run all tests
+pytest app/tests
+
+# Run unit tests
+CYLESTIO_TEST_DB_TYPE=memory pytest app/tests -k "not integration"
+
+# Run integration tests
+CYLESTIO_TEST_DB_TYPE=file pytest app/tests/integration
 ```
 
-Run integration tests:
+## 🔧 Troubleshooting
+
+### Common Issues
+
+1. **Database not found or permission errors**
+   - Check that the database directory exists and has proper write permissions
+   - Verify the `CYLESTIO_DB_PATH` environment variable if you're overriding the default location
+   - Solution: `mkdir -p ~/.config/cylestio-monitor` (Linux) or equivalent for your OS
+
+2. **Port already in use**
+   - Error: `OSError: [Errno 48] Address already in use`
+   - Solution: Change the port with `uvicorn app.main:app --port 8001`
+
+3. **Module not found errors**
+   - Ensure you've activated the virtual environment
+   - Verify all dependencies are installed: `pip install -r requirements.txt`
+
+4. **Test failures**
+   - Clean the test database: `./run_tests.sh clean`
+   - Reset your environment variables
+   - Check for specific errors in test output
+
+### Viewing Logs
+
+For detailed operation logs, run the server with increased verbosity:
+
 ```bash
-make test-integration
+uvicorn app.main:app --log-level debug
 ```
 
-Or manually:
-```bash
-# Unit tests
-CYLESTIO_TEST_MODE=true pytest app/tests
+## 🤝 Contributing
 
-# Integration tests
-python app/tests/integration/run_e2e_integration.py
-```
+Contributions are welcome! Please feel free to submit a Pull Request.
 
-## End-to-End Integration Testing
-
-The integration test suite simulates the complete flow of telemetry data:
-
-1. Starts the server (if not already running)
-2. Sends example telemetry records to the API
-3. Verifies data storage and transformation
-4. Simulates dashboard queries
-5. Tests error handling
-
-Run with options:
-```bash
-# Using test database (default)
-python app/tests/integration/run_e2e_integration.py
-
-# Using production database
-python app/tests/integration/run_e2e_integration.py --production-db
-
-# Using an already running server
-python app/tests/integration/run_e2e_integration.py --no-server
-```
-
-## Deployment
-
-For detailed deployment instructions for Linux, macOS, and Windows, see [DEPLOYMENT.md](DEPLOYMENT.md).
-
-## Design Decisions
-
-1. **Async FastAPI**: Used for non-blocking I/O and efficient handling of concurrent requests.
-2. **SQLite with SQLAlchemy**: Simple, lightweight storage solution for local deployment.
-3. **JSON Storage**: Event data is stored in a flexible JSON format to accommodate varying structures.
-4. **Indexing Strategy**: Added indexes on frequently queried fields (timestamp, agent_id, event_type).
-5. **OS-Specific Configuration**: Database paths follow OS conventions for application data storage.
-6. **Background Processing**: Telemetry ingestion uses FastAPI background tasks for non-blocking operation.
-
-## Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request. 
+For more detailed deployment instructions, see [DEPLOYMENT.md](DEPLOYMENT.md). 

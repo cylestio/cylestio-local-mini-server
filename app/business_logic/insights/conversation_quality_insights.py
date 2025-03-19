@@ -5,7 +5,7 @@ This module provides insight extractors for conversation quality metrics.
 """
 
 from typing import Dict, Any, Optional, List
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, UTC
 import statistics
 from collections import Counter
 from sqlalchemy.orm import Session
@@ -45,10 +45,10 @@ class ConversationQualityInsightExtractor(BaseInsightExtractor):
         # Set default time range if not provided
         if not start_time:
             # Default to last week if no start time
-            start_time = datetime.utcnow() - timedelta(days=7)
+            start_time = datetime.now(UTC) - timedelta(days=7)
         
         if not end_time:
-            end_time = datetime.utcnow()
+            end_time = datetime.now(UTC)
         
         # Get model requests and responses
         requests = self.get_filtered_events(
@@ -348,10 +348,10 @@ class ConversationMetricsInsightExtractor(BaseInsightExtractor):
         # Set default time range if not provided
         if not start_time:
             # Default to last week if no start time
-            start_time = datetime.utcnow() - timedelta(days=7)
+            start_time = datetime.now(UTC) - timedelta(days=7)
         
         if not end_time:
-            end_time = datetime.utcnow()
+            end_time = datetime.now(UTC)
         
         # Get model responses
         responses = self.get_filtered_events(

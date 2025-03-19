@@ -1,5 +1,9 @@
 #!/bin/bash
 
+# Cylestio Test Runner Script
+# This script simplifies running tests with different database configurations
+# and manages the test database environment.
+
 # Default directory for test databases
 DATA_DIR="./data"
 TEST_DB_PATH="$DATA_DIR/test_cylestio.db"
@@ -11,18 +15,26 @@ mkdir -p "$DATA_DIR"
 show_help() {
   echo "Cylestio Test Runner Script"
   echo ""
+  echo "This script simplifies running Cylestio tests with different database"
+  echo "configurations and manages test database setup/cleanup."
+  echo ""
   echo "Usage: ./run_tests.sh [command] [options]"
   echo ""
   echo "Commands:"
-  echo "  all            Run all tests"
-  echo "  unit           Run only unit tests (in-memory database)"
-  echo "  integration    Run only integration tests (file-based database)"
-  echo "  preserved      Run tests that use preserved database"
+  echo "  all            Run all tests (both unit and integration)"
+  echo "  unit           Run only unit tests (uses in-memory database)"
+  echo "  integration    Run only integration tests (uses file-based database)"
+  echo "  preserved      Run tests that preserve the database for inspection"
   echo "  clean          Remove test database files"
   echo ""
   echo "Options:"
   echo "  -v, --verbose  Run tests in verbose mode"
   echo "  -h, --help     Show this help message"
+  echo ""
+  echo "Environment Variables:"
+  echo "  CYLESTIO_TEST_DB_TYPE      Set to 'memory' for unit tests or 'file' for integration tests"
+  echo "  CYLESTIO_DB_PATH           Customize the test database location"
+  echo "  CYLESTIO_PRESERVE_TEST_DB  Set to 'true' to keep the database after tests"
   echo ""
   echo "Examples:"
   echo "  ./run_tests.sh unit -v         Run unit tests in verbose mode"
@@ -87,12 +99,14 @@ case "$command" in
     
   unit)
     echo "Running unit tests with in-memory database..."
+    # Configure for unit tests with in-memory database
     export CYLESTIO_TEST_DB_TYPE="memory"
     python -m pytest app/tests -k "not integration" $verbose
     ;;
     
   integration)
     echo "Running integration tests with file-based database..."
+    # Configure for integration tests with file-based database
     export CYLESTIO_TEST_DB_TYPE="file"
     export CYLESTIO_DB_PATH="$TEST_DB_PATH"
     python -m pytest app/tests/integration $verbose
@@ -100,6 +114,7 @@ case "$command" in
     
   preserved)
     echo "Running tests with preserved database..."
+    # Configure for tests that preserve the database for inspection
     export CYLESTIO_TEST_DB_TYPE="file"
     export CYLESTIO_DB_PATH="$TEST_DB_PATH"
     export CYLESTIO_PRESERVE_TEST_DB="true"
