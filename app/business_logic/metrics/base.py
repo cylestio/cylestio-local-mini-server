@@ -176,6 +176,22 @@ class MetricRegistry:
                 )
         return results
 
+    def get_all_calculators(self) -> Dict[str, BaseMetricCalculator]:
+        """Get a copy of all registered calculators.
+        
+        Returns:
+            Dict containing all registered calculator instances
+        """
+        return self.calculators.copy()
+        
+    def get_available_metrics(self) -> List[str]:
+        """Get a list of names of all registered calculators.
+        
+        Returns:
+            List of calculator names
+        """
+        return list(self.calculators.keys())
+
 
 # Create a global registry instance
 metric_registry = MetricRegistry() 

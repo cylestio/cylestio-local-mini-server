@@ -175,6 +175,33 @@ class InsightRegistry:
                     session_id=session_id
                 )
         return results
+    
+    def get_extractor(self, name: str) -> Optional[BaseInsightExtractor]:
+        """Get an extractor by name.
+        
+        Args:
+            name: Name of the extractor to get
+            
+        Returns:
+            The extractor if found, None otherwise
+        """
+        return self.extractors.get(name)
+    
+    def get_all_extractors(self) -> Dict[str, BaseInsightExtractor]:
+        """Get all registered extractors.
+        
+        Returns:
+            Dict mapping extractor names to extractors
+        """
+        return self.extractors.copy()
+        
+    def get_available_insights(self) -> List[str]:
+        """Get names of all available insights.
+        
+        Returns:
+            List of insight names
+        """
+        return list(self.extractors.keys())
 
 
 # Create a global registry instance

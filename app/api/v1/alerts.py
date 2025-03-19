@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, desc, and_, or_
 from typing import List, Optional
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, UTC
 
 from app.database.init_db import get_session
 from app.models.event import Event
@@ -89,9 +89,8 @@ async def get_alerts(
         else:
             severity = "low"
         
-        # Generate a status (for demonstration - in a real system this would be tracked in a separate table)
-        # For this example, we'll consider alerts in the last 24 hours as active
-        alert_status = "active" if (datetime.utcnow() - event.timestamp) < timedelta(days=1) else "resolved"
+        # Determine alert status - active if < 24h old
+        alert_status = "active" if (datetime.now(UTC) - event.timestamp) < timedelta(days=1) else "resolved"
         
         # Skip if we're filtering by status and it doesn't match
         if status and status.lower() != alert_status:
@@ -162,8 +161,8 @@ async def get_alert(
     else:
         severity = "low"
     
-    # Generate a status
-    alert_status = "active" if (datetime.utcnow() - event.timestamp) < timedelta(days=1) else "resolved"
+    # Determine alert status - active if < 24h old
+    alert_status = "active" if (datetime.now(UTC) - event.timestamp) < timedelta(days=1) else "resolved"
     
     # Get related events (context around this alert)
     context_result = await session.execute(

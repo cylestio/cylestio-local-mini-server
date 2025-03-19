@@ -6,7 +6,7 @@ Each calculator focuses on a specific metric for better modularity.
 """
 
 from typing import Dict, Any, Optional, List
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, UTC
 import statistics
 from sqlalchemy.orm import Session
 
@@ -470,13 +470,11 @@ class TokenRateCalculator(BaseMetricCalculator):
                 - output_tokens_per_minute: Output token usage rate per minute
                 - time_range_minutes: Time range used for calculation in minutes
         """
-        # Get time range
+        # Default time range if not provided
         if not start_time:
-            # Default to last hour if no start time
-            start_time = datetime.utcnow() - timedelta(hours=1)
-        
+            start_time = datetime.now(UTC) - timedelta(hours=1)
         if not end_time:
-            end_time = datetime.utcnow()
+            end_time = datetime.now(UTC)
         
         # Calculate time range in minutes
         time_range_minutes = (end_time - start_time).total_seconds() / 60
@@ -540,13 +538,11 @@ class ModelTokenRateCalculator(BaseMetricCalculator):
                 - token_rates_by_model: Token rates broken down by model
                 - time_range_minutes: Time range used for calculation in minutes
         """
-        # Get time range
+        # Default time range if not provided
         if not start_time:
-            # Default to last hour if no start time
-            start_time = datetime.utcnow() - timedelta(hours=1)
-        
+            start_time = datetime.now(UTC) - timedelta(hours=1)
         if not end_time:
-            end_time = datetime.utcnow()
+            end_time = datetime.now(UTC)
         
         # Calculate time range in minutes
         time_range_minutes = (end_time - start_time).total_seconds() / 60

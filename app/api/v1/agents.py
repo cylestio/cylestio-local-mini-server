@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, desc, and_, or_
 from typing import List, Optional
-from datetime import datetime
+from datetime import datetime, UTC
 
 from app.database.init_db import get_session
 from app.models.agent import Agent
@@ -84,11 +84,13 @@ async def list_agents(
     # Convert result to list of dictionaries
     agents = []
     for row in result:
-        status = "active" if (datetime.utcnow() - row.last_seen).total_seconds() < 3600 else "inactive"
+        # Convert last_seen to string and compute status
+        formatted_last_seen = row.last_seen.isoformat()
+        status = "active" if (datetime.now(UTC) - row.last_seen).total_seconds() < 3600 else "inactive"
         agents.append({
             "agent_id": row.agent_id,
             "first_seen": row.first_seen.isoformat(),
-            "last_seen": row.last_seen.isoformat(),
+            "last_seen": formatted_last_seen,
             "llm_provider": row.llm_provider,
             "event_count": row.event_count,
             "status": status
@@ -160,7 +162,7 @@ async def get_agent_details(
     first_event = first_event_result.scalars().first()
     
     # Calculate status
-    status = "active" if (datetime.utcnow() - agent.last_seen).total_seconds() < 3600 else "inactive"
+    status = "active" if (datetime.now(UTC) - agent.last_seen).total_seconds() < 3600 else "inactive"
     
     # Calculate average response time for model responses
     avg_response_time_result = await session.execute(

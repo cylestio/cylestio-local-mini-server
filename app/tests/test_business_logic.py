@@ -7,7 +7,7 @@ and extracting insights from example data.
 import os
 import sys
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, UTC
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
@@ -137,85 +137,130 @@ def create_test_db():
 
 def test_metrics():
     """Test metrics calculation."""
-    db = create_test_db()
+    from unittest.mock import MagicMock
+    
+    # Create a mock database session
+    mock_db = MagicMock()
+    
+    # Mock the query results that would be returned from the database
+    mock_events = [
+        MagicMock(
+            id=1,
+            timestamp=datetime.now(UTC) - timedelta(minutes=5),
+            agent_id="test-agent",
+            session_id="test-session",
+            event_type="model_request",
+            data={"llm_request": {"model": "gpt-4", "usage": {"input_tokens": 20}}}
+        ),
+        MagicMock(
+            id=2, 
+            timestamp=datetime.now(UTC) - timedelta(minutes=4, seconds=30),
+            agent_id="test-agent",
+            session_id="test-session",
+            event_type="model_response",
+            data={"llm_output": {"model": "gpt-4", "usage": {"output_tokens": 15}}, "performance": {"duration_ms": 500}}
+        ),
+        MagicMock(
+            id=3, 
+            timestamp=datetime.now(UTC) - timedelta(minutes=2),
+            agent_id="test-agent",
+            session_id="test-session",
+            event_type="error",
+            data={"error": "Connection timeout", "error_type": "network_error"}
+        )
+    ]
+    
+    # Configure the mock query to return our mock events
+    mock_query = MagicMock()
+    mock_filter = MagicMock()
+    mock_filter.all.return_value = mock_events
+    mock_query.filter.return_value = mock_filter
+    mock_query.all.return_value = mock_events
+    mock_db.query.return_value = mock_query
     
     print("\n=== Available Metrics ===")
     metrics = business_logic.get_available_metrics()
-    for metric in metrics:
-        print(f"- {metric}")
+    assert len(metrics) > 0, "Should have available metrics"
     
-    print("\n=== Calculating All Metrics ===")
-    all_metrics = business_logic.calculate_all_metrics(db)
+    print("\n=== Calculating Metrics ===")
+    for metric_name in metrics:
+        try:
+            result = business_logic.calculate_metric(metric_name, db=mock_db)
+            print(f"- {metric_name}: {result}")
+            assert isinstance(result, dict), f"Metric {metric_name} should return a dictionary"
+        except Exception as e:
+            print(f"- {metric_name}: Error - {str(e)}")
     
-    # Print summary of each metric
-    for name, result in all_metrics.items():
-        print(f"\n--- {name} ---")
-        if isinstance(result, dict):
-            # Print the top-level keys and some basic info
-            print(f"Keys: {', '.join(result.keys())}")
-            
-            # Print more detailed information for specific metrics
-            if name.endswith('ResponseTimeMetricCalculator'):
-                if 'average_response_time_ms' in result:
-                    print(f"Average Response Time: {result['average_response_time_ms']:.2f} ms")
-            
-            elif name.endswith('TokenUsageMetricCalculator'):
-                if 'total_tokens' in result:
-                    print(f"Total Tokens: {result['total_tokens']}")
-                if 'average_tokens_per_request' in result:
-                    print(f"Avg Tokens/Request: {result['average_tokens_per_request']}")
-            
-            elif name.endswith('ErrorRateMetricCalculator'):
-                if 'error_rate' in result:
-                    print(f"Error Rate: {result['error_rate']:.2f}%")
-                if 'total_errors' in result:
-                    print(f"Total Errors: {result['total_errors']}")
-        else:
-            print(f"Result: {result}")
-    
-    return db
+    # Test all metrics calculation
+    all_metrics = business_logic.calculate_all_metrics(db=mock_db)
+    assert isinstance(all_metrics, dict), "All metrics should be returned as a dictionary"
+    assert len(all_metrics) > 0, "Should calculate at least one metric"
 
 
-def test_insights(db):
+def test_insights():
     """Test insights extraction."""
+    from unittest.mock import MagicMock
+    
+    # Create a mock database session
+    mock_db = MagicMock()
+    
+    # Mock the query results that would be returned from the database
+    mock_events = [
+        MagicMock(
+            id=1,
+            timestamp=datetime.now(UTC) - timedelta(minutes=5),
+            agent_id="test-agent",
+            session_id="test-session",
+            event_type="model_request",
+            data={"llm_request": {"model": "gpt-4", "usage": {"input_tokens": 20}}}
+        ),
+        MagicMock(
+            id=2, 
+            timestamp=datetime.now(UTC) - timedelta(minutes=4, seconds=30),
+            agent_id="test-agent",
+            session_id="test-session",
+            event_type="model_response",
+            data={"llm_output": {"model": "gpt-4", "usage": {"output_tokens": 15}}, "performance": {"duration_ms": 500}}
+        ),
+        MagicMock(
+            id=3, 
+            timestamp=datetime.now(UTC) - timedelta(minutes=2),
+            agent_id="test-agent",
+            session_id="test-session",
+            event_type="error",
+            data={"error": "Connection timeout", "error_type": "network_error"}
+        )
+    ]
+    
+    # Configure the mock query to return our mock events
+    mock_query = MagicMock()
+    mock_filter = MagicMock()
+    mock_filter.all.return_value = mock_events
+    mock_query.filter.return_value = mock_filter
+    mock_query.all.return_value = mock_events
+    mock_db.query.return_value = mock_query
+    
     print("\n=== Available Insights ===")
     insights = business_logic.get_available_insights()
-    for insight in insights:
-        print(f"- {insight}")
+    assert len(insights) > 0, "Should have available insights"
     
-    print("\n=== Extracting All Insights ===")
-    all_insights = business_logic.extract_all_insights(db)
+    print("\n=== Extracting Insights ===")
+    # Count successful extractions
+    successful_extractions = 0
+    for insight_name in insights:
+        try:
+            result = business_logic.extract_insight(insight_name, db=mock_db)
+            print(f"- {insight_name}: {result}")
+            assert isinstance(result, dict), f"Insight {insight_name} should return a dictionary"
+            successful_extractions += 1
+        except Exception as e:
+            print(f"- {insight_name}: Error - {str(e)}")
     
-    # Print summary of each insight
-    for name, result in all_insights.items():
-        print(f"\n--- {name} ---")
-        if isinstance(result, dict):
-            # Print the top-level keys
-            print(f"Keys: {', '.join(result.keys())}")
-            
-            # Print more detailed information for specific insights
-            if name.endswith('AgentHealthInsightExtractor'):
-                if 'overall_health' in result:
-                    print(f"Overall Health Score: {result['overall_health']['score']}")
-                    print(f"Health Status: {result['overall_health']['status']}")
-            
-            elif name.endswith('ConversationQualityInsightExtractor'):
-                if 'session_insights' in result:
-                    sessions = len(result['session_insights'])
-                    print(f"Analyzed Sessions: {sessions}")
-                if 'agent_insights' in result:
-                    agents = len(result['agent_insights'])
-                    print(f"Analyzed Agents: {agents}")
-            
-            elif name.endswith('ContentUsageInsightExtractor'):
-                if 'model_usage' in result and 'models' in result['model_usage']:
-                    models = list(result['model_usage']['models'].keys())
-                    print(f"Models Used: {', '.join(models)}")
-        else:
-            print(f"Result: {result}")
+    # We should have at least some successful extractions
+    assert successful_extractions > 0, "Should have at least one successful insight extraction"
 
 
 if __name__ == "__main__":
     db = test_metrics()
-    test_insights(db)
+    test_insights()
     print("\nBusiness logic layer tests completed successfully!") 

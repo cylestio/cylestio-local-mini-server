@@ -6,7 +6,7 @@ Each calculator focuses on a specific metric for better modularity.
 """
 
 from typing import Dict, Any, Optional, List
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, UTC
 import statistics
 from sqlalchemy.orm import Session
 
@@ -285,18 +285,17 @@ class ResponseTimeTrendCalculator(BaseMetricCalculator):
                 - response_time_trends: Average response times grouped by time interval
                 - interval: The time interval used for grouping
         """
-        # Set default time range if not provided
-        if not start_time:
-            # Default time range based on interval
-            if interval == 'hour':
-                start_time = datetime.utcnow() - timedelta(days=1)
-            elif interval == 'day':
-                start_time = datetime.utcnow() - timedelta(days=7)
-            else:  # 'week'
-                start_time = datetime.utcnow() - timedelta(days=30)
+        # Get time range from parameters or use defaults
+        if interval == 'hour':
+            start_time = start_time or (datetime.now(UTC) - timedelta(days=1))
+        elif interval == 'day':
+            start_time = start_time or (datetime.now(UTC) - timedelta(days=7))
+        elif interval == 'week':
+            start_time = start_time or (datetime.now(UTC) - timedelta(days=30))
+        else:
+            start_time = start_time or (datetime.now(UTC) - timedelta(days=1))
         
-        if not end_time:
-            end_time = datetime.utcnow()
+        end_time = end_time or datetime.now(UTC)
         
         # Format for grouping timestamps by interval
         if interval == 'hour':
@@ -441,10 +440,10 @@ class RequestRateCalculator(BaseMetricCalculator):
         # Set default time range if not provided
         if not start_time:
             # Default to last hour
-            start_time = datetime.utcnow() - timedelta(hours=1)
+            start_time = datetime.now(UTC) - timedelta(hours=1)
         
         if not end_time:
-            end_time = datetime.utcnow()
+            end_time = datetime.now(UTC)
         
         # Calculate time range in minutes
         time_range_minutes = (end_time - start_time).total_seconds() / 60
@@ -555,14 +554,14 @@ class RequestRateTrendCalculator(BaseMetricCalculator):
         if not start_time:
             # Default time range based on interval
             if interval == 'hour':
-                start_time = datetime.utcnow() - timedelta(days=1)
+                start_time = datetime.now(UTC) - timedelta(days=1)
             elif interval == 'day':
-                start_time = datetime.utcnow() - timedelta(days=7)
+                start_time = datetime.now(UTC) - timedelta(days=7)
             else:  # 'week'
-                start_time = datetime.utcnow() - timedelta(days=30)
+                start_time = datetime.now(UTC) - timedelta(days=30)
         
         if not end_time:
-            end_time = datetime.utcnow()
+            end_time = datetime.now(UTC)
         
         # Format for grouping timestamps by interval
         if interval == 'hour':

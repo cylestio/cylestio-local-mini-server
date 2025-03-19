@@ -6,7 +6,7 @@ Each calculator focuses on a specific metric for better modularity.
 """
 
 from typing import Dict, Any, Optional, List, Counter
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, UTC
 from collections import defaultdict
 from sqlalchemy.orm import Session
 
@@ -418,18 +418,17 @@ class SecurityAlertTrendCalculator(BaseMetricCalculator):
                 - severity_trends: Alert severity counts grouped by time interval
                 - interval: The time interval used for grouping
         """
-        # Set default time range if not provided
+        # Set default time range if not provided based on interval
         if not start_time:
-            # Default time range based on interval
             if interval == 'hour':
-                start_time = datetime.utcnow() - timedelta(days=1)
+                start_time = datetime.now(UTC) - timedelta(days=1)
             elif interval == 'day':
-                start_time = datetime.utcnow() - timedelta(days=7)
+                start_time = datetime.now(UTC) - timedelta(days=7)
             else:  # 'week'
-                start_time = datetime.utcnow() - timedelta(days=30)
+                start_time = datetime.now(UTC) - timedelta(days=30)
         
         if not end_time:
-            end_time = datetime.utcnow()
+            end_time = datetime.now(UTC)
         
         # Format for grouping timestamps by interval
         if interval == 'hour':

@@ -26,7 +26,7 @@ from app.tests.test_config import (
 
 # Setup fixtures for unit tests using in-memory database
 @pytest.fixture(scope="function")
-def setup_unit_test_env():
+async def setup_unit_test_env():
     """Setup the environment for unit tests with in-memory database."""
     # Configure environment for in-memory database
     db_path = setup_memory_db()
@@ -38,6 +38,10 @@ def setup_unit_test_env():
         connect_args={"check_same_thread": False},
         future=True
     )
+    
+    # Create all tables from Base metadata
+    async with test_engine.begin() as conn:
+        await conn.run_sync(lambda conn: Base.metadata.create_all(conn))
     
     # Session factory for in-memory tests
     TestingSessionLocal = sessionmaker(
@@ -57,7 +61,7 @@ def setup_unit_test_env():
 
 # Setup fixtures for integration tests using file-based database
 @pytest.fixture(scope="function")
-def setup_integration_test_env():
+async def setup_integration_test_env():
     """Setup the environment for integration tests with file-based database."""
     # Configure environment for file-based database
     db_path = setup_file_db()
@@ -79,6 +83,10 @@ def setup_integration_test_env():
         connect_args={"check_same_thread": False},
         future=True
     )
+    
+    # Create all tables from Base metadata
+    async with test_engine.begin() as conn:
+        await conn.run_sync(lambda conn: Base.metadata.create_all(conn))
     
     # Session factory for file-based tests
     TestingSessionLocal = sessionmaker(

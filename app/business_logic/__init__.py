@@ -20,7 +20,7 @@ class BusinessLogicLayer:
         self.metric_registry = metric_registry
         self.insight_registry = insight_registry
     
-    def calculate_metrics(self, metric_name, db, **kwargs):
+    def calculate_metric(self, metric_name, db, **kwargs):
         """Calculate a specific metric.
         
         Args:
@@ -30,11 +30,14 @@ class BusinessLogicLayer:
             
         Returns:
             The calculated metric result, or None if the metric doesn't exist
+            
+        Raises:
+            ValueError: If the specified metric doesn't exist
         """
         calculator = self.metric_registry.get_calculator(metric_name)
         if calculator:
             return calculator.calculate(db=db, **kwargs)
-        return None
+        raise ValueError(f"Metric '{metric_name}' not found")
     
     def calculate_all_metrics(self, db, **kwargs):
         """Calculate all registered metrics.
@@ -61,11 +64,14 @@ class BusinessLogicLayer:
             
         Returns:
             The extracted insight, or None if the insight doesn't exist
+            
+        Raises:
+            ValueError: If the specified insight doesn't exist
         """
         extractor = self.insight_registry.get_extractor(insight_name)
         if extractor:
             return extractor.extract(db=db, **kwargs)
-        return None
+        raise ValueError(f"Insight '{insight_name}' not found")
     
     def extract_all_insights(self, db, **kwargs):
         """Extract all registered insights.

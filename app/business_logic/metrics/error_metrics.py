@@ -6,7 +6,7 @@ Each calculator focuses on a specific metric for better modularity.
 """
 
 from typing import Dict, Any, Optional, List, Counter
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, UTC
 from collections import defaultdict
 import re
 from sqlalchemy.orm import Session
@@ -43,10 +43,10 @@ class ErrorRateCalculator(BaseMetricCalculator):
         """
         # Set default time range if not provided
         if not start_time:
-            start_time = datetime.utcnow() - timedelta(hours=1)
+            start_time = datetime.now(UTC) - timedelta(hours=1)
         
         if not end_time:
-            end_time = datetime.utcnow()
+            end_time = datetime.now(UTC)
             
         # Get model request events
         request_events = self.get_filtered_events(
@@ -150,14 +150,14 @@ class ErrorTrendCalculator(BaseMetricCalculator):
         if not start_time:
             # Default to last day if no start time
             if interval == 'hour':
-                start_time = datetime.utcnow() - timedelta(days=1)
+                start_time = datetime.now(UTC) - timedelta(days=1)
             elif interval == 'day':
-                start_time = datetime.utcnow() - timedelta(days=7)
+                start_time = datetime.now(UTC) - timedelta(days=7)
             else:  # 'week'
-                start_time = datetime.utcnow() - timedelta(days=30)
+                start_time = datetime.now(UTC) - timedelta(days=30)
         
         if not end_time:
-            end_time = datetime.utcnow()
+            end_time = datetime.now(UTC)
             
         # Format for grouping timestamps by interval
         if interval == 'hour':
