@@ -5,6 +5,7 @@ import uvicorn
 from app.database.init_db import create_tables
 from app.routers import agents, events
 from app.routers.metrics import router as metrics_router
+from app.routers.telemetry import router as telemetry_router
 
 app = FastAPI(
     title="Cylestio Mini-Local Server",
@@ -25,6 +26,7 @@ app.add_middleware(
 app.include_router(agents.router, prefix="/api/agents", tags=["agents"])
 app.include_router(events.router, prefix="/api/events", tags=["events"])
 app.include_router(metrics_router, prefix="/api/metrics", tags=["metrics"])
+app.include_router(telemetry_router, prefix="/api", tags=["telemetry"])
 
 @app.on_event("startup")
 async def startup():
