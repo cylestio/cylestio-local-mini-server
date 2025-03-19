@@ -2,7 +2,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, desc, and_, or_
 from typing import List, Optional
-from datetime import datetime, UTC
+from datetime import datetime, UTC, timedelta
+import pytz
 
 from app.database.init_db import get_session
 from app.models.agent import Agent
@@ -85,11 +86,22 @@ async def list_agents(
     agents = []
     for row in result:
         # Convert last_seen to string and compute status
-        formatted_last_seen = row.last_seen.isoformat()
-        status = "active" if (datetime.now(UTC) - row.last_seen).total_seconds() < 3600 else "inactive"
+        formatted_last_seen = row.last_seen.isoformat() if row.last_seen else None
+        
+        # Handle timezone-aware datetime comparison
+        if row.last_seen:
+            # Ensure row.last_seen has timezone info
+            last_seen = row.last_seen.replace(tzinfo=UTC) if row.last_seen.tzinfo is None else row.last_seen
+            # Get current time with timezone info
+            now = datetime.now(UTC)
+            # Calculate time difference
+            status = "active" if (now - last_seen).total_seconds() < 3600 else "inactive"
+        else:
+            status = "inactive"
+            
         agents.append({
             "agent_id": row.agent_id,
-            "first_seen": row.first_seen.isoformat(),
+            "first_seen": row.first_seen.isoformat() if row.first_seen else None,
             "last_seen": formatted_last_seen,
             "llm_provider": row.llm_provider,
             "event_count": row.event_count,
@@ -162,7 +174,15 @@ async def get_agent_details(
     first_event = first_event_result.scalars().first()
     
     # Calculate status
-    status = "active" if (datetime.now(UTC) - agent.last_seen).total_seconds() < 3600 else "inactive"
+    if agent.last_seen:
+        # Ensure last_seen has timezone info
+        last_seen = agent.last_seen.replace(tzinfo=UTC) if agent.last_seen.tzinfo is None else agent.last_seen
+        # Get current time with timezone info
+        now = datetime.now(UTC)
+        # Calculate time difference
+        status = "active" if (now - last_seen).total_seconds() < 3600 else "inactive"
+    else:
+        status = "inactive"
     
     # Calculate average response time for model responses
     avg_response_time_result = await session.execute(
@@ -175,24 +195,24 @@ async def get_agent_details(
     # Construct the response
     return {
         "agent_id": agent.agent_id,
-        "first_seen": agent.first_seen.isoformat(),
-        "last_seen": agent.last_seen.isoformat(),
+        "first_seen": agent.first_seen.isoformat() if agent.first_seen else None,
+        "last_seen": agent.last_seen.isoformat() if agent.last_seen else None,
         "llm_provider": agent.llm_provider,
         "status": status,
         "event_counts": {
             "by_type": event_types,
             "by_channel": channels,
-            "total": sum(event_types.values())
+            "total": sum(event_types.values()) if event_types else 0
         },
         "performance": {
             "avg_response_time_ms": round(avg_response_time, 2)
         },
         "latest_event": {
             "type": latest_event.event_type if latest_event else None,
-            "timestamp": latest_event.timestamp.isoformat() if latest_event else None
+            "timestamp": latest_event.timestamp.isoformat() if latest_event and latest_event.timestamp else None
         },
         "first_event": {
             "type": first_event.event_type if first_event else None,
-            "timestamp": first_event.timestamp.isoformat() if first_event else None
+            "timestamp": first_event.timestamp.isoformat() if first_event and first_event.timestamp else None
         }
     } 

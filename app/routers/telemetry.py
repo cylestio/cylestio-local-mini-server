@@ -17,6 +17,7 @@ from app.transformers.event_transformer import EventTransformer
 # Configure logging
 logger = logging.getLogger(__name__)
 
+# Create router with a specific tag that won't be duplicated by the API router
 router = APIRouter()
 event_transformer = EventTransformer()
 
@@ -360,7 +361,7 @@ def validate_telemetry_event(event_data: Dict[str, Any]) -> List[str]:
     
     return errors
 
-@router.post("/v1/telemetry", status_code=status.HTTP_202_ACCEPTED)
+@router.post("/", status_code=status.HTTP_202_ACCEPTED)
 async def ingest_telemetry(
     background_tasks: BackgroundTasks,
     event_data: Dict[str, Any] = Body(...),
@@ -384,7 +385,7 @@ async def ingest_telemetry(
     # Return a quick acknowledgement
     return {"status": "accepted", "message": "Event queued for processing"}
 
-@router.post("/v1/telemetry/batch", status_code=status.HTTP_202_ACCEPTED)
+@router.post("/batch", status_code=status.HTTP_202_ACCEPTED)
 async def ingest_telemetry_batch(
     background_tasks: BackgroundTasks,
     event_data_list: List[Dict[str, Any]] = Body(...),
