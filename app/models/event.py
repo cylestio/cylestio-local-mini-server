@@ -20,6 +20,9 @@ class Event(Base):
     direction = Column(String, nullable=True, index=True)
     session_id = Column(String, nullable=True, index=True)
     
+    # Relationship tracking
+    relationship_id = Column(String, nullable=True, index=True)
+    
     # Store the full event data as JSON
     data = Column(JSON, nullable=True)
     

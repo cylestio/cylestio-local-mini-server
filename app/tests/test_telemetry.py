@@ -3,16 +3,28 @@ import json
 import asyncio
 from fastapi.testclient import TestClient
 from fastapi import status
+import pytest_asyncio
+from sqlalchemy.pool import NullPool
 
 from app.main import app
-from app.database.init_db import create_tables, get_session
+from app.database.init_db import init_db, get_session
 from app.models.event import Event
 from app.models.agent import Agent
 from app.models.session import Session
 from sqlalchemy import select
 
-# Create a test client
-client = TestClient(app)
+@pytest.fixture(scope="module")
+def test_client():
+    """Create a test client."""
+    with TestClient(app) as client:
+        yield client
+
+@pytest_asyncio.fixture(scope="function")
+async def test_db():
+    """Set up test database."""
+    await init_db()
+    yield
+    # Cleanup will be handled by FastAPI's dependency injection
 
 # Test data for valid events
 VALID_EVENT = {
@@ -57,27 +69,27 @@ def load_test_data_from_file(filename):
         return None
 
 # Tests for validation only (no database operations)
-def test_telemetry_endpoint_valid_data():
+def test_telemetry_endpoint_valid_data(test_client):
     """Test that the telemetry endpoint accepts valid data and returns 202."""
-    response = client.post("/api/v1/telemetry", json=VALID_EVENT)
+    response = test_client.post("/api/v1/telemetry", json=VALID_EVENT)
     assert response.status_code == status.HTTP_202_ACCEPTED
     assert response.json()["status"] == "accepted"
 
-def test_telemetry_endpoint_missing_timestamp():
+def test_telemetry_endpoint_missing_timestamp(test_client):
     """Test that the endpoint rejects events without a timestamp."""
-    response = client.post("/api/v1/telemetry", json=INVALID_EVENT_MISSING_TIMESTAMP)
+    response = test_client.post("/api/v1/telemetry", json=INVALID_EVENT_MISSING_TIMESTAMP)
     assert response.status_code == status.HTTP_400_BAD_REQUEST
     assert "timestamp" in response.json()["detail"]["errors"][0]
 
-def test_telemetry_endpoint_missing_agent_id():
+def test_telemetry_endpoint_missing_agent_id(test_client):
     """Test that the endpoint rejects events without an agent_id."""
-    response = client.post("/api/v1/telemetry", json=INVALID_EVENT_MISSING_AGENT_ID)
+    response = test_client.post("/api/v1/telemetry", json=INVALID_EVENT_MISSING_AGENT_ID)
     assert response.status_code == status.HTTP_400_BAD_REQUEST
     assert "agent_id" in response.json()["detail"]["errors"][0]
 
-def test_telemetry_endpoint_missing_event_type():
+def test_telemetry_endpoint_missing_event_type(test_client):
     """Test that the endpoint rejects events without an event_type."""
-    response = client.post("/api/v1/telemetry", json=INVALID_EVENT_MISSING_EVENT_TYPE)
+    response = test_client.post("/api/v1/telemetry", json=INVALID_EVENT_MISSING_EVENT_TYPE)
     assert response.status_code == status.HTTP_400_BAD_REQUEST
     assert "event_type" in response.json()["detail"]["errors"][0]
 
@@ -85,73 +97,69 @@ def test_telemetry_endpoint_missing_event_type():
 # Skipping these for now as they require more complex setup
 @pytest.mark.skip(reason="Requires database setup")
 @pytest.mark.asyncio
-async def test_event_stored_in_database():
+async def test_event_stored_in_database(test_client, test_db):
     """Test that valid events are stored in the database."""
-    # This test requires proper database setup
-    # Create database tables first
-    await create_tables()
-    
     # Send a valid event
-    response = client.post("/api/v1/telemetry", json=VALID_EVENT)
+    response = test_client.post("/api/v1/telemetry", json=VALID_EVENT)
     assert response.status_code == status.HTTP_202_ACCEPTED
     
     # Wait for async processing
     await asyncio.sleep(0.5)
     
-    # Check the database
     async for session in get_session():
-        result = await session.execute(
-            select(Event).where(
-                Event.agent_id == VALID_EVENT["agent_id"],
-                Event.event_type == VALID_EVENT["event_type"]
+        try:
+            result = await session.execute(
+                select(Event).where(
+                    Event.agent_id == VALID_EVENT["agent_id"],
+                    Event.event_type == VALID_EVENT["event_type"]
+                )
             )
-        )
-        event = result.scalars().first()
-        
-        assert event is not None
-        assert event.agent_id == VALID_EVENT["agent_id"]
-        assert event.event_type == VALID_EVENT["event_type"]
-        
-        # Clean up
-        if event:
-            await session.delete(event)
-            await session.commit()
+            event = result.scalars().first()
+            
+            assert event is not None
+            assert event.agent_id == VALID_EVENT["agent_id"]
+            assert event.event_type == VALID_EVENT["event_type"]
+            
+            # Clean up
+            if event:
+                await session.delete(event)
+                await session.commit()
+        finally:
+            await session.close()
 
 @pytest.mark.skip(reason="Requires database setup")
 @pytest.mark.asyncio
-async def test_with_example_json_files():
+async def test_with_example_json_files(test_client, test_db):
     """Test the telemetry endpoint with real-world examples from the provided JSON files."""
-    # This test requires proper database setup
-    # Create database tables first
-    await create_tables()
-    
     # Load example data
     weather_event = load_test_data_from_file("weather_monitoring.json")
     if not weather_event:
         pytest.skip("Example JSON file not found, skipping test")
     
     # Send the event
-    response = client.post("/api/v1/telemetry", json=weather_event)
+    response = test_client.post("/api/v1/telemetry", json=weather_event)
     assert response.status_code == status.HTTP_202_ACCEPTED
     
     # Wait for async processing
     await asyncio.sleep(0.5)
     
-    # Check the database
     async for session in get_session():
-        result = await session.execute(
-            select(Event).where(
-                Event.agent_id == weather_event["agent_id"],
-                Event.event_type == weather_event["event_type"]
+        try:
+            result = await session.execute(
+                select(Event).where(
+                    Event.agent_id == weather_event["agent_id"],
+                    Event.event_type == weather_event["event_type"]
+                )
             )
-        )
-        event = result.scalars().first()
-        
-        assert event is not None
-        assert event.agent_id == weather_event["agent_id"]
-        assert event.event_type == weather_event["event_type"]
-        
-        # Clean up
-        if event:
-            await session.delete(event)
-            await session.commit() 
+            event = result.scalars().first()
+            
+            assert event is not None
+            assert event.agent_id == weather_event["agent_id"]
+            assert event.event_type == weather_event["event_type"]
+            
+            # Clean up
+            if event:
+                await session.delete(event)
+                await session.commit()
+        finally:
+            await session.close() 

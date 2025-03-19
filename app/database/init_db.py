@@ -18,8 +18,9 @@ if not os.path.exists(DB_DIR):
 SQLALCHEMY_DATABASE_URL = f"sqlite+aiosqlite:///{DB_PATH}"
 engine = create_async_engine(
     SQLALCHEMY_DATABASE_URL, 
-    echo=False,
+    echo=True,
     connect_args={"check_same_thread": False},  # Needed for SQLite
+    future=True
 )
 
 # Create async session factory
@@ -29,13 +30,8 @@ async_session = sessionmaker(
     expire_on_commit=False,
 )
 
-async def get_session() -> AsyncSession:
-    """Get a database session."""
-    async with async_session() as session:
-        yield session
-
-async def create_tables():
-    """Create all database tables."""
+async def init_db():
+    """Initialize the database by creating all tables."""
     async with engine.begin() as conn:
         # This will drop all tables and recreate them (remove for production)
         # await conn.run_sync(Base.metadata.drop_all)
@@ -43,4 +39,9 @@ async def create_tables():
         # This will create tables if they don't exist
         await conn.run_sync(Base.metadata.create_all)
         
-    print("Database tables created successfully.") 
+    print("Database tables created successfully.")
+
+async def get_session() -> AsyncSession:
+    """Get a database session."""
+    async with async_session() as session:
+        yield session 
