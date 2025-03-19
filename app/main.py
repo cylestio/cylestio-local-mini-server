@@ -39,7 +39,7 @@ app.include_router(agents.router, prefix="/api/agents", tags=["agents"])
 app.include_router(events.router, prefix="/api/events", tags=["events"])
 app.include_router(metrics_router, prefix="/api/metrics", tags=["metrics"])
 app.include_router(telemetry_router, prefix="/api", tags=["telemetry"])
-app.include_router(api_router, prefix="/api", tags=["business_logic"])
+app.include_router(api_router, prefix="/api", tags=["api"])
 
 @app.get("/", tags=["health"])
 async def health_check():
