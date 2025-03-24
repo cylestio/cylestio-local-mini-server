@@ -2,6 +2,7 @@ import os
 import asyncio
 import platform
 import sys
+import subprocess
 from pathlib import Path
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
@@ -89,8 +90,49 @@ async_session = sessionmaker(
     expire_on_commit=False,
 )
 
+def run_migrations():
+    """Run database migrations to ensure schema is up-to-date.
+    
+    This is only needed for file-based databases, not in-memory ones.
+    """
+    if DB_PATH == ":memory:":
+        return
+    
+    try:
+        # Path to migration script
+        script_path = os.path.join(get_project_root(), "scripts", "migrate_db.py")
+        
+        # Check if script exists
+        if not os.path.exists(script_path):
+            print(f"Warning: Migration script not found at {script_path}")
+            return
+        
+        print(f"Running database migrations from {script_path}...")
+        result = subprocess.run(
+            [sys.executable, script_path], 
+            capture_output=True, 
+            text=True,
+            env=dict(os.environ)
+        )
+        
+        if result.returncode == 0:
+            print("Migrations completed successfully.")
+            if result.stdout:
+                print(f"Migration output: {result.stdout}")
+        else:
+            print(f"Warning: Migrations failed with return code {result.returncode}")
+            if result.stderr:
+                print(f"Migration error: {result.stderr}")
+                
+    except Exception as e:
+        print(f"Error running migrations: {str(e)}")
+
 async def init_db():
     """Initialize the database by creating all tables."""
+    # Run migrations first for file-based databases
+    if DB_PATH != ":memory:":
+        run_migrations()
+    
     async with engine.begin() as conn:
         # In test mode, we might want to drop and recreate tables
         if IS_TEST and os.environ.get("CYLESTIO_RESET_TEST_DB", "false").lower() == "true":
