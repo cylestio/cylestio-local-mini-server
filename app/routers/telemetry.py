@@ -174,7 +174,10 @@ async def process_event(event_data: Dict[str, Any], session: AsyncSession):
                 else:
                     # Update session
                     existing_session.end_time = timestamp
-                    existing_session.total_events += 1
+                    if existing_session.total_events is None:
+                        existing_session.total_events = 1
+                    else:
+                        existing_session.total_events += 1
             except Exception as e:
                 logger.error(f"Error updating session: {str(e)}")
                 # Continue anyway
@@ -253,105 +256,41 @@ async def find_matching_start_event(agent_id: str, finish_event: Event, session:
 
 async def process_batch(event_data_list: List[Dict[str, Any]], session: AsyncSession):
     """
-    Process a batch of telemetry events with relationship tracking.
-    Utilizes the event transformer's batch processing capabilities.
+    Process a batch of telemetry events asynchronously.
+    This function handles database operations for storing multiple events.
+    
+    Args:
+        event_data_list: List of telemetry event data
+        session: Async SQLAlchemy session
     """
+    if not event_data_list:
+        logger.warning("Received empty batch to process")
+        return
+    
+    logger.info(f"Processing batch of {len(event_data_list)} events")
+    
     try:
-        # Transform the batch of events
-        transformed_events = event_transformer.process_batch(event_data_list)
+        # Sort events by timestamp to ensure proper session/conversation flow
+        sorted_events = sorted(
+            event_data_list, 
+            key=lambda e: datetime.datetime.fromisoformat(
+                e.get("timestamp", "1970-01-01T00:00:00").replace("Z", "+00:00")
+            )
+        )
         
-        # Process each transformed event
-        for transformed_data in transformed_events:
+        # Process init events first to ensure sessions are created
+        init_events = [e for e in sorted_events if e.get("event_type") == "monitor_init"]
+        regular_events = [e for e in sorted_events if e.get("event_type") != "monitor_init"]
+        
+        # Process events in order: init events first, then others
+        for event_data in init_events + regular_events:
             try:
-                # Extract required fields
-                timestamp = transformed_data.get("timestamp")
-                level = transformed_data.get("level", "INFO")
-                agent_id = transformed_data.get("agent_id")
-                event_type = transformed_data.get("event_type")
-                channel = transformed_data.get("channel", "UNKNOWN")
-                
-                # Optional fields
-                direction = transformed_data.get("direction")
-                session_id = transformed_data.get("session_id")
-                duration_ms = transformed_data.get("duration_ms")
-                relationship_id = transformed_data.get("relationship_id")
-                related_event_id = transformed_data.get("related_event_id")
-                
-                # Check for caller information
-                caller_file = transformed_data.get("caller_file")
-                caller_line = transformed_data.get("caller_line")
-                caller_function = transformed_data.get("caller_function")
-                
-                # Check if agent exists, create if not (only do this once per batch per agent)
-                agent_result = await session.execute(
-                    select(Agent).where(Agent.agent_id == agent_id)
-                )
-                agent = agent_result.scalars().first()
-                
-                if not agent:
-                    # Create new agent
-                    agent = Agent(
-                        agent_id=agent_id,
-                        first_seen=timestamp,
-                        last_seen=timestamp
-                    )
-                    
-                    # Set LLM provider if available from transformed data
-                    if "data" in transformed_data and transformed_data["data"].get("model"):
-                        agent.llm_provider = transformed_data["data"].get("model")
-                    
-                    session.add(agent)
-                else:
-                    # Update last seen
-                    agent.last_seen = timestamp
-                
-                # Create event
-                event = Event(
-                    timestamp=timestamp,
-                    level=level,
-                    agent_id=agent_id,
-                    event_type=event_type,
-                    channel=channel,
-                    direction=direction,
-                    session_id=session_id,
-                    data=transformed_data.get("data"),
-                    duration_ms=duration_ms,
-                    caller_file=caller_file,
-                    caller_line=caller_line,
-                    caller_function=caller_function,
-                    relationship_id=relationship_id
-                )
-                session.add(event)
-                
-                # Check for session and update if needed
-                if session_id:
-                    session_result = await session.execute(
-                        select(Session).where(Session.session_id == session_id)
-                    )
-                    existing_session = session_result.scalars().first()
-                    
-                    if not existing_session:
-                        # Create new session
-                        new_session = Session(
-                            session_id=session_id,
-                            agent_id=agent_id,
-                            start_time=timestamp,
-                            total_events=1
-                        )
-                        session.add(new_session)
-                    else:
-                        # Update session
-                        existing_session.end_time = timestamp
-                        existing_session.total_events += 1
-            
+                await process_event(event_data, session)
             except Exception as e:
                 logger.error(f"Error processing event in batch: {str(e)}")
                 # Continue with next event
                 continue
-        
-        # Commit all changes at once
-        await session.commit()
-        
+    
     except Exception as e:
         logger.error(f"Unhandled error in process_batch: {str(e)}")
         # We catch all exceptions to prevent background task failures

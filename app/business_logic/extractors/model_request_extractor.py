@@ -139,15 +139,17 @@ class ModelRequestExtractor(BaseExtractor):
             # Create FrameworkDetails object
             framework_details = FrameworkDetails(
                 event_id=event.id,
-                framework_name=framework_name,
-                framework_version=framework_version,
-                component_name=component_name,
-                component_type=component_type,
-                components_json=components
+                name=framework_name,
+                version=framework_version,
+                component=component_name,
+                chain_type=component_type if component_type == "chain_type" else None,
+                llm_type=component_type if component_type == "llm_type" else None,
+                tool_type=component_type if component_type == "tool_type" else None,
+                model_name=component_name if component_type == "model" else None
             )
             
             # Add to session
-            await db_session.add(framework_details)
+            db_session.add(framework_details)
             logger.info(f"Extracted framework details for event {event.id}: {framework_name} {framework_version}")
             
             return framework_details

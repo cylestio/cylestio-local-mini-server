@@ -97,55 +97,46 @@ class ModelResponseExtractor(BaseExtractor):
                                 
                                 if input_match and output_match:
                                     usage = {
-                                        "input_tokens": input_match.group(1),
-                                        "output_tokens": output_match.group(1)
+                                        "input_tokens": int(input_match.group(1)),
+                                        "output_tokens": int(output_match.group(1))
                                     }
                         except Exception as e:
-                            logger.warning(f"Failed to parse token usage from text: {e}")
+                            logger.error(f"Error parsing token usage from text: {str(e)}")
             
-            if not usage:
-                logger.info(f"No token usage data found in event {event.id}")
-                return None
-            
-            # Get token counts with different possible field names
-            input_tokens = None
-            output_tokens = None
-            
-            if "input_tokens" in usage:
-                input_tokens = int(usage["input_tokens"])
-            elif "prompt_tokens" in usage:
-                input_tokens = int(usage["prompt_tokens"])
+            # If we have usage data, create the token usage object
+            if usage:
+                input_tokens = int(usage.get("input_tokens", 0))
+                output_tokens = int(usage.get("output_tokens", 0))
+                total_tokens = int(usage.get("total_tokens", 0))
                 
-            if "output_tokens" in usage:
-                output_tokens = int(usage["output_tokens"])
-            elif "completion_tokens" in usage:
-                output_tokens = int(usage["completion_tokens"])
+                # If total tokens not provided, calculate it
+                if total_tokens == 0:
+                    total_tokens = input_tokens + output_tokens
+                
+                # Get model information
+                model_name = None
+                if "model" in data:
+                    model_name = data.get("model")
+                elif "llm_output" in data and "model" in data.get("llm_output", {}):
+                    model_name = data.get("llm_output", {}).get("model")
+                
+                # Create token usage object
+                token_usage = TokenUsage(
+                    event_id=event.id,
+                    input_tokens=input_tokens,
+                    output_tokens=output_tokens,
+                    total_tokens=total_tokens,
+                    model=model_name
+                )
+                
+                # Add to session
+                db_session.add(token_usage)
+                logger.info(f"Extracted token usage for event {event.id}: {input_tokens} input, {output_tokens} output")
+                
+                return token_usage
             
-            if input_tokens is None or output_tokens is None:
-                logger.info(f"Incomplete token usage data in event {event.id}")
-                return None
+            return None
             
-            # Get model info from various possible locations
-            model = "unknown"
-            if "model" in data.get("llm_output", {}):
-                model = data["llm_output"]["model"]
-            elif "model_name" in data.get("llm_output", {}):
-                model = data["llm_output"]["model_name"]
-            
-            # Create TokenUsage object
-            token_usage = TokenUsage(
-                event_id=event.id,
-                input_tokens=input_tokens,
-                output_tokens=output_tokens,
-                total_tokens=input_tokens + output_tokens,
-                model=model
-            )
-            
-            # Add to session
-            await db_session.add(token_usage)
-            logger.info(f"Extracted token usage for event {event.id}: {input_tokens} input, {output_tokens} output")
-            
-            return token_usage
         except Exception as e:
             logger.error(f"Error extracting token usage for event {event.id}: {str(e)}")
             return None
@@ -281,7 +272,7 @@ class ModelResponseExtractor(BaseExtractor):
             )
             
             # Add to session
-            await db_session.add(content_analysis)
+            db_session.add(content_analysis)
             logger.info(f"Extracted content for event {event.id}: {word_count} words")
             
             return content_analysis

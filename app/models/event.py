@@ -37,15 +37,24 @@ class Event(Base):
     # Track whether this event has been processed by the business logic layer
     is_processed = Column(Boolean, nullable=False, default=False, index=True)
     
+    # Alert status for security events
+    alert = Column(String, nullable=True, index=True)
+    
     # Relationships
     agent = relationship("Agent", back_populates="events")
     
-    # New relationships to normalized data models
+    # Existing relationships to normalized data models
     token_usage = relationship("TokenUsage", back_populates="event", uselist=False, cascade="all, delete-orphan")
     performance_metrics = relationship("PerformanceMetric", back_populates="event", cascade="all, delete-orphan")
     security_alerts = relationship("SecurityAlert", back_populates="event", cascade="all, delete-orphan")
     content_analysis = relationship("ContentAnalysis", back_populates="event", cascade="all, delete-orphan")
     framework_details = relationship("FrameworkDetails", back_populates="event", uselist=False, cascade="all, delete-orphan")
+    
+    # New relationships to enhanced data models
+    model_details = relationship("ModelDetails", back_populates="event", uselist=False, cascade="all, delete-orphan")
+    prompt_details = relationship("PromptDetails", back_populates="event", uselist=False, cascade="all, delete-orphan")
+    response_details = relationship("ResponseDetails", back_populates="event", uselist=False, cascade="all, delete-orphan")
+    call_stacks = relationship("CallStack", back_populates="event", cascade="all, delete-orphan")
     
     def __repr__(self):
         return f"<Event {self.event_type} at {self.timestamp}>" 

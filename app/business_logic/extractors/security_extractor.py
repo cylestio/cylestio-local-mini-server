@@ -1,196 +1,161 @@
 """
 SecurityExtractor module.
 
-This module provides an extractor for security-related data from events,
-which extracts security alerts and warning information.
+This module extracts security-related information from events.
 """
 
-from typing import Dict, Any, Optional, List
 import logging
-import json
+from typing import Optional
 
-from app.business_logic.extractors.base import BaseExtractor, extractor_registry
 from app.models.security_alert import SecurityAlert
+from app.business_logic.extractors.base import BaseExtractor
+from sqlalchemy import select
 
 # Set up logging
 logger = logging.getLogger(__name__)
 
 
 class SecurityExtractor(BaseExtractor):
-    """Extractor for security-related data from events.
+    """Extractor for security alert data.
     
-    Extracts security alerts and warning information from events
-    that contain security data.
+    Extracts security alerts, warnings, and suspicious activity markers
+    from events that contain security-related information.
     """
     
     def can_process(self, event) -> bool:
-        """Determine if this extractor can process the given event.
+        """Check if this event contains security data.
         
         Args:
             event: The event to check
             
         Returns:
-            True if the event contains security data, False otherwise
+            True if this event might contain security data
         """
-        if not event.data:
+        # Skip events with explicit "none" alert
+        if hasattr(event, 'alert') and event.alert and event.alert.lower() == "none":
             return False
+            
+        # Skip events with "none" alert in data
+        if event.data and 'alert' in event.data and event.data['alert'].lower() == "none":
+            return False
+            
+        # Check for alert field at top level
+        if hasattr(event, 'alert') and event.alert:
+            return True
+            
+        # Check for alert in data
+        if event.data and 'alert' in event.data:
+            return True
+            
+        # Check for security-oriented event types
+        security_event_types = {
+            "LLM_call_start",
+            "LLM_call_finish",
+            "LLM_call_blocked"
+        }
         
-        # Check if the event has security data
-        return "security" in event.data
+        return event.event_type in security_event_types
     
     async def process(self, event, db_session) -> None:
-        """Process the event and extract security data.
+        """Extract security information from the event.
         
         Args:
             event: The event to process
             db_session: Database session for persistence
         """
-        if not event.data:
-            logger.warning(f"No data in event {event.id}")
-            return
+        # Check if security alert already exists for this event
+        result = await db_session.execute(
+            select(SecurityAlert).where(SecurityAlert.event_id == event.id)
+        )
+        existing_security_alert = result.scalars().first()
         
-        # Extract security alerts
-        await self._extract_security_alerts(event, db_session)
+        if existing_security_alert:
+            logger.info(f"Security alert already exists for event {event.id}, skipping extraction")
+            return
+            
+        security_alert = await self._extract_security_alert(event)
+        
+        if security_alert:
+            db_session.add(security_alert)
     
-    async def _extract_security_alerts(self, event, db_session) -> List[SecurityAlert]:
-        """Extract security alerts from the event.
+    async def _extract_security_alert(self, event) -> Optional[SecurityAlert]:
+        """Extract security alert data from the event.
         
         Args:
             event: The event to extract from
-            db_session: Database session for persistence
             
         Returns:
-            List of created SecurityAlert objects
+            SecurityAlert object or None if no security data found
         """
         try:
-            data = event.data
+            # Base security fields
+            alert_type = None
+            severity = None
+            description = None
             
-            # Get security data
-            security = data.get("security", {})
-            if not security:
-                return []
+            # Check direct event attribute
+            if hasattr(event, 'alert') and event.alert:
+                alert_type = event.alert
             
-            alerts = []
+            # Check in data field
+            if not alert_type and event.data and 'alert' in event.data:
+                alert_type = event.data['alert']
             
-            # Process top-level alert
-            alert_level = security.get("alert_level")
-            if alert_level and alert_level != "none":
-                alert = SecurityAlert(
-                    event_id=event.id,
-                    alert_level=alert_level,
-                    field_path="",
-                    description=f"Security alert detected in {event.event_type} event"
-                )
-                await db_session.add(alert)
-                alerts.append(alert)
+            # Skip if alert type is explicitly "none"
+            if alert_type and alert_type.lower() == "none":
+                return None
+                
+            # Special handling for LLM_call_blocked events
+            if event.event_type == "LLM_call_blocked":
+                if 'reason' in event.data:
+                    reason = event.data['reason']
+                    alert_type = 'blocked'
+                    severity = 'high'
+                    description = f"LLM call blocked: {reason}"
             
-            # Process field-specific alerts
-            field_checks = security.get("field_checks", {})
-            if field_checks:
-                for field_path, field_data in self._flatten_security_checks(field_checks):
-                    alert_level = field_data.get("alert_level")
-                    if alert_level and alert_level != "none":
-                        alert = SecurityAlert(
-                            event_id=event.id,
-                            alert_level=alert_level,
-                            field_path=field_path,
-                            description=f"Security alert detected in field '{field_path}'"
-                        )
-                        await db_session.add(alert)
-                        alerts.append(alert)
+            # Set severity based on alert type
+            if alert_type and not severity:
+                if alert_type.lower() == 'dangerous':
+                    severity = 'high'
+                    description = 'Potentially harmful content detected'
+                elif alert_type.lower() == 'suspicious':
+                    severity = 'medium'
+                    description = 'Suspicious pattern detected'
+                else:
+                    severity = 'low'
+                    description = 'Informational security notice'
             
-            # Check for direct security notifications in the data
-            if "security_alerts" in data:
-                sec_alerts = data.get("security_alerts", [])
-                if isinstance(sec_alerts, list):
-                    for i, sec_alert in enumerate(sec_alerts):
-                        if isinstance(sec_alert, dict):
-                            level = sec_alert.get("level", "warning")
-                            description = sec_alert.get("description", f"Security issue #{i+1}")
-                            field = sec_alert.get("field", "")
-                            
-                            alert = SecurityAlert(
-                                event_id=event.id,
-                                alert_level=level,
-                                field_path=field,
-                                description=description
-                            )
-                            await db_session.add(alert)
-                            alerts.append(alert)
-                elif isinstance(sec_alerts, dict):
-                    # Handle dictionary format
-                    for field, alert_info in sec_alerts.items():
-                        level = "warning"
-                        description = f"Security issue in {field}"
-                        
-                        if isinstance(alert_info, dict):
-                            level = alert_info.get("level", "warning")
-                            description = alert_info.get("description", description)
-                        
-                        alert = SecurityAlert(
-                            event_id=event.id,
-                            alert_level=level,
-                            field_path=field,
-                            description=description
-                        )
-                        await db_session.add(alert)
-                        alerts.append(alert)
-            
-            # Check for potential security issues in prompt content
-            if event.event_type == "model_request" and "prompts" in data:
-                prompts = data.get("prompts", [])
-                if prompts and isinstance(prompts, list):
-                    # Basic security checks for concerning content
-                    security_keywords = [
-                        "password", "secret", "token", "api key", "credential", 
-                        "exploit", "hack", "bypass", "vulnerability"
-                    ]
+            # Handle specific event types
+            if event.event_type == "LLM_call_start" and event.data:
+                # Check prompt content for suspicious patterns
+                if 'prompt' in event.data:
+                    prompt = event.data['prompt']
+                    # Simple check for potentially problematic content
+                    dangerous_keywords = {'hack', 'exploit', 'bomb', 'attack', 'bypass'}
                     
-                    for i, prompt in enumerate(prompts):
-                        if not isinstance(prompt, str):
-                            continue
-                            
-                        prompt_lower = prompt.lower()
-                        for keyword in security_keywords:
-                            if keyword in prompt_lower:
-                                alert = SecurityAlert(
-                                    event_id=event.id,
-                                    alert_level="warning",
-                                    field_path=f"prompts[{i}]",
-                                    description=f"Potential security concern: prompt contains '{keyword}'"
-                                )
-                                await db_session.add(alert)
-                                alerts.append(alert)
-                                break  # Only one alert per prompt
+                    if isinstance(prompt, list) and len(prompt) > 0:
+                        # For list-type prompts, check the last item (most recent user message)
+                        last_prompt = prompt[-1]
+                        content = last_prompt.get('content', '') if isinstance(last_prompt, dict) else str(last_prompt)
+                        
+                        # Check for dangerous keywords
+                        if any(keyword in content.lower() for keyword in dangerous_keywords):
+                            alert_type = 'suspicious'
+                            severity = 'medium'
+                            description = 'Potentially problematic content in prompt'
             
-            if alerts:
-                logger.info(f"Extracted {len(alerts)} security alerts for event {event.id}")
+            # If we found security data, create the object
+            if alert_type:
+                return SecurityAlert(
+                    event_id=event.id,
+                    alert_type=alert_type,
+                    severity=severity or 'low',
+                    description=description or 'Security alert detected',
+                    timestamp=event.timestamp
+                )
             
-            return alerts
-        except Exception as e:
-            logger.error(f"Error extracting security alerts for event {event.id}: {str(e)}")
-            return []
-    
-    def _flatten_security_checks(self, field_checks, prefix=""):
-        """Flatten nested security checks into (path, data) pairs.
+            return None
         
-        Args:
-            field_checks: Nested field checks dictionary
-            prefix: Path prefix for nested fields
-            
-        Yields:
-            Tuples of (field_path, field_data)
-        """
-        for key, value in field_checks.items():
-            path = f"{prefix}.{key}" if prefix else key
-            
-            if isinstance(value, dict) and "alert_level" in value:
-                # This is a leaf node
-                yield (path, value)
-            elif isinstance(value, dict):
-                # This is a nested dictionary
-                yield from self._flatten_security_checks(value, path)
-
-
-# Register the extractor
-extractor_registry.register(SecurityExtractor()) 
+        except Exception as e:
+            logger.error(f"Error extracting security alert from event {event.id}: {str(e)}")
+            return None 

@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, DateTime, Integer, ForeignKey, func
+from sqlalchemy import Column, String, DateTime, Integer, ForeignKey, func, JSON
 from sqlalchemy.orm import relationship
 
 from app.models.base import Base
@@ -15,8 +15,16 @@ class Session(Base):
     end_time = Column(DateTime, nullable=True)
     total_events = Column(Integer, default=0, nullable=False)
     
+    # Enhanced metrics
+    total_tokens = Column(Integer, default=0, nullable=False)
+    total_requests = Column(Integer, default=0, nullable=False)
+    total_responses = Column(Integer, default=0, nullable=False)
+    avg_latency_ms = Column(Integer, nullable=True)
+    session_metadata = Column(JSON, nullable=True)
+    
     # Relationships
     agent = relationship("Agent")
+    conversations = relationship("Conversation", back_populates="session")
     
     def __repr__(self):
         return f"<Session {self.session_id}>" 

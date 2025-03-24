@@ -1,6 +1,7 @@
 from typing import Dict, Any, Optional
 import datetime
 import logging
+import json
 import re
 
 logger = logging.getLogger(__name__)
@@ -88,14 +89,22 @@ def process_tool_call_finish(event: Dict[str, Any]) -> Dict[str, Any]:
             transformed["data"]["tool_result"] = result
             
             # Check if the result indicates an error
-            if isinstance(result, str) and ("error" in result.lower() or "exception" in result.lower()):
+            if isinstance(result, dict) and "error" in result:
                 transformed["data"]["is_error"] = True
                 transformed["level"] = "ERROR"
-            elif isinstance(result, dict) and "error" in result:
-                transformed["data"]["is_error"] = True
-                transformed["level"] = "ERROR"
-            elif isinstance(result, str) and "isError=False" in result:
-                transformed["data"]["is_error"] = False
+            elif isinstance(result, str):
+                # Explicit isError indicator in string
+                if "isError=False" in result:
+                    transformed["data"]["is_error"] = False
+                elif "isError=True" in result:
+                    transformed["data"]["is_error"] = True
+                    transformed["level"] = "ERROR"
+                # Only look for standalone "error" or "exception", not as part of other words
+                elif re.search(r'\b(error|exception)\b', result.lower()):
+                    transformed["data"]["is_error"] = True
+                    transformed["level"] = "ERROR"
+                else:
+                    transformed["data"]["is_error"] = False
             else:
                 transformed["data"]["is_error"] = False
     

@@ -7,6 +7,8 @@ from fastapi.openapi.utils import get_openapi
 import uvicorn
 from typing import List, Dict, Any, Union
 import json
+import argparse
+import os
 
 from app.database.init_db import init_db
 from app.api import api_router
@@ -189,4 +191,10 @@ def custom_openapi():
 app.openapi = custom_openapi
 
 if __name__ == "__main__":
-    uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True) 
+    parser = argparse.ArgumentParser(description="Run the Cylestio Mini-Local Server")
+    parser.add_argument("--host", default="0.0.0.0", help="Host to bind the server to")
+    parser.add_argument("--port", type=int, default=int(os.environ.get("CYLESTIO_PORT", 8080)), 
+                        help="Port to bind the server to (default: 8080)")
+    args = parser.parse_args()
+    
+    uvicorn.run("app.main:app", host=args.host, port=args.port, reload=True) 

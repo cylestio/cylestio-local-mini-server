@@ -8,6 +8,13 @@ from app.models.security_alert import SecurityAlert
 from app.models.content_analysis import ContentAnalysis
 from app.models.framework_details import FrameworkDetails
 
+# New enhanced models
+from app.models.model_details import ModelDetails
+from app.models.prompt_details import PromptDetails
+from app.models.response_details import ResponseDetails
+from app.models.call_stack import CallStack
+from app.models.conversation import Conversation, ConversationTurn
+
 # Export all models
 __all__ = [
     "Base", 
@@ -18,5 +25,11 @@ __all__ = [
     "PerformanceMetric",
     "SecurityAlert",
     "ContentAnalysis",
-    "FrameworkDetails"
+    "FrameworkDetails",
+    "ModelDetails",
+    "PromptDetails",
+    "ResponseDetails",
+    "CallStack",
+    "Conversation",
+    "ConversationTurn"
 ] 

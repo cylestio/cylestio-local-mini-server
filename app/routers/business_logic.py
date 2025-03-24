@@ -527,39 +527,54 @@ async def process_all_events(
     processor = EventProcessor()
     
     total_processed = 0
+    errors = []
     continue_processing = True
     
     while continue_processing:
-        # Query a batch of unprocessed events
-        result = await db.execute(
-            select(Event)
-            .where(Event.is_processed == False)
-            .limit(batch_size)
-        )
-        events = result.scalars().all()
-        
-        if not events:
-            # No more events to process
-            continue_processing = False
-            break
-        
-        # Process events
-        processed_count = 0
-        for event in events:
-            try:
-                await processor.process_event(event, db)
-                processed_count += 1
-            except Exception as e:
-                # Log the error but continue processing other events
-                logger.error(f"Error processing event {event.id}: {str(e)}")
-        
-        total_processed += processed_count
-        
-        # If we processed fewer events than the batch size, we're done
-        if processed_count < batch_size:
+        try:
+            # Query a batch of unprocessed events
+            result = await db.execute(
+                select(Event)
+                .where(Event.is_processed == False)
+                .limit(batch_size)
+            )
+            events = result.scalars().all()
+            
+            if not events:
+                # No more events to process
+                continue_processing = False
+                break
+            
+            # Process events
+            processed_count = 0
+            for event in events:
+                try:
+                    # Create a new session for each event to isolate failures
+                    async with db.begin_nested():
+                        result = await processor.process_event(event, db)
+                        if result:
+                            processed_count += 1
+                except Exception as e:
+                    # Log the error but continue processing other events
+                    error_msg = f"Error processing event {event.id if event else 'unknown'}: {str(e)}"
+                    logger.error(error_msg)
+                    errors.append(error_msg)
+                    # Make sure to roll back to a clean state
+                    await db.rollback()
+            
+            total_processed += processed_count
+            
+            # If we processed fewer events than the batch size, we're done
+            if processed_count < batch_size:
+                continue_processing = False
+        except Exception as e:
+            logger.error(f"Batch processing error: {str(e)}")
+            errors.append(f"Batch error: {str(e)}")
+            await db.rollback()
             continue_processing = False
     
     return {
         "message": f"Processed {total_processed} historical events",
-        "processed_count": total_processed
+        "processed_count": total_processed,
+        "errors": errors[:10] if errors else []  # Return up to 10 errors for diagnostics
     } 

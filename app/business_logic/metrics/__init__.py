@@ -10,7 +10,9 @@ from app.business_logic.metrics import (
     token_usage_metrics,
     error_metrics,
     performance_metrics,
-    security_metrics
+    security_metrics,
+    quality_metrics,
+    usage_metrics
 )
 
 __all__ = [
@@ -20,5 +22,7 @@ __all__ = [
     'token_usage_metrics',
     'error_metrics',
     'performance_metrics',
-    'security_metrics'
+    'security_metrics',
+    'quality_metrics',
+    'usage_metrics'
 ]

@@ -13,7 +13,7 @@ from app.business_logic.base import (
     insight_registry
 )
 
-from app.business_logic.extractors import (
+from app.business_logic.extractors.base import (
     BaseExtractor,
     ExtractorRegistry,
     extractor_registry

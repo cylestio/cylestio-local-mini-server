@@ -119,7 +119,10 @@ async def create_event(
         else:
             # Update session
             existing_session.end_time = timestamp
-            existing_session.total_events += 1
+            if existing_session.total_events is None:
+                existing_session.total_events = 1
+            else:
+                existing_session.total_events += 1
     
     await session.commit()
     
