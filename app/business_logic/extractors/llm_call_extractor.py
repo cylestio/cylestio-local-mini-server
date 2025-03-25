@@ -195,6 +195,17 @@ class LLMCallExtractor(BaseExtractor):
             cache_creation_tokens = 0
             model = None
             
+            # Extract model information from multiple possible locations
+            if "model" in data:
+                if isinstance(data["model"], dict) and "name" in data["model"]:
+                    model = data["model"]["name"]
+                else:
+                    model = data["model"]
+            elif "response" in data and "model" in data["response"]:
+                model = data["response"]["model"]
+            elif "response" in data and "model_name" in data["response"]:
+                model = data["response"]["model_name"]
+            
             # Extract token data from response
             if "response" in data and "usage" in data["response"]:
                 usage_data = data["response"]["usage"]
@@ -211,9 +222,23 @@ class LLMCallExtractor(BaseExtractor):
                 # Some providers provide cache information
                 cache_read_tokens = int(usage_data.get("cache_read_input_tokens", 0))
                 cache_creation_tokens = int(usage_data.get("cache_creation_input_tokens", 0))
+            
+            # Try direct token_usage in the data
+            elif "token_usage" in data:
+                usage_data = data["token_usage"]
+                input_tokens = int(usage_data.get("input_tokens", 0))
+                output_tokens = int(usage_data.get("output_tokens", 0))
+                total_tokens = int(usage_data.get("total_tokens", 0))
+            
+            # Look for usage data in llm_output
+            elif "llm_output" in data and "usage" in data["llm_output"]:
+                usage_data = data["llm_output"]["usage"]
+                input_tokens = int(usage_data.get("input_tokens", 0))
+                output_tokens = int(usage_data.get("output_tokens", 0))
+                total_tokens = int(usage_data.get("total_tokens", 0))
                 
-                # Get model information
-                model = data["response"].get("model")
+                if not model and "model" in data["llm_output"]:
+                    model = data["llm_output"]["model"]
             
             # If we found token data, create the object
             if input_tokens > 0 or output_tokens > 0:
@@ -238,8 +263,9 @@ class LLMCallExtractor(BaseExtractor):
                 return token_usage
                 
             return None
+                
         except Exception as e:
-            logger.error(f"Error extracting token usage from event {event.id}: {str(e)}")
+            logger.error(f"Error extracting token usage for event {event.id}: {str(e)}")
             return None
     
     async def _extract_performance_metrics(self, event, db_session) -> Optional[PerformanceMetric]:

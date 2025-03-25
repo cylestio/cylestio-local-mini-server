@@ -66,9 +66,11 @@ def _process_generic_event(event: Dict[str, Any]) -> Dict[str, Any]:
     Returns:
         Processed event with common fields extracted
     """
+    # Import here to avoid circular imports
+    from app.transformers.base import BaseTransformer
+    
     timestamp = event.get("timestamp")
-    if isinstance(timestamp, str):
-        timestamp = datetime.datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+    timestamp = BaseTransformer.normalize_timestamp(timestamp)
     
     transformed = {
         "timestamp": timestamp,

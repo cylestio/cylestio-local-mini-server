@@ -22,85 +22,128 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 event_transformer = EventTransformer()
 
+async def get_or_create_event(event_data, db_session):
+    """Get existing event or create a new one.
+    
+    Ensures idempotency by checking for existing events with the same
+    key attributes before creating a new one.
+    
+    Args:
+        event_data: The event data to create
+        db_session: Database session
+        
+    Returns:
+        The existing or newly created event
+    """
+    # Extract identifiable fields
+    agent_id = event_data.get("agent_id")
+    event_type = event_data.get("event_type")
+    
+    # Parse timestamp if it's a string
+    timestamp = event_data.get("timestamp")
+    if isinstance(timestamp, str):
+        timestamp = datetime.datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+    
+    # Try to find existing event with same key data
+    query = select(Event).where(
+        Event.agent_id == agent_id,
+        Event.event_type == event_type,
+        Event.timestamp == timestamp
+    )
+    
+    if "session_id" in event_data and event_data["session_id"]:
+        query = query.where(Event.session_id == event_data["session_id"])
+        
+    result = await db_session.execute(query)
+    existing_event = result.scalars().first()
+    
+    if existing_event:
+        logger.info(f"Found existing event {existing_event.id}, skipping creation")
+        return existing_event
+    
+    # Check if agent exists, create if not
+    agent_result = await db_session.execute(
+        select(Agent).where(Agent.agent_id == agent_id)
+    )
+    agent = agent_result.scalars().first()
+    
+    if not agent:
+        # Create new agent
+        agent = Agent(
+            agent_id=agent_id,
+            first_seen=timestamp,
+            last_seen=timestamp
+        )
+        
+        # Set LLM provider if available
+        if "data" in event_data and "model" in event_data["data"]:
+            agent.llm_provider = event_data["data"]["model"]
+        elif "data" in event_data and "LLM_provider" in event_data["data"]:
+            agent.llm_provider = event_data["data"]["LLM_provider"]
+        
+        db_session.add(agent)
+    else:
+        # Update last seen
+        agent.last_seen = timestamp
+    
+    # Extract caller info if available
+    caller_file = None
+    caller_line = None
+    caller_function = None
+    if "caller" in event_data:
+        caller = event_data["caller"]
+        caller_file = caller.get("file")
+        caller_line = caller.get("line")
+        caller_function = caller.get("function")
+    
+    # Extract duration if available
+    duration_ms = None
+    if "data" in event_data:
+        data = event_data["data"]
+        if "duration_ms" in data:
+            duration_ms = data["duration_ms"]
+        elif "performance" in data and isinstance(data["performance"], dict) and "duration_ms" in data["performance"]:
+            duration_ms = data["performance"]["duration_ms"]
+    
+    # Create new event
+    event = Event(
+        timestamp=timestamp,
+        level=event_data.get("level", "INFO"),
+        agent_id=agent_id,
+        event_type=event_type,
+        channel=event_data.get("channel"),
+        direction=event_data.get("direction"),
+        session_id=event_data.get("session_id"),
+        data=event_data.get("data"),
+        duration_ms=duration_ms,
+        caller_file=caller_file,
+        caller_line=caller_line,
+        caller_function=caller_function
+    )
+    
+    db_session.add(event)
+    await db_session.flush()  # Get ID without committing
+    
+    return event
+
 async def process_event(event_data: Dict[str, Any], session: AsyncSession):
     """
     Process a telemetry event asynchronously.
     This function handles database operations for storing the event.
     """
     try:
-        # Transform the raw event data into structured data
+        # Transform the event data
         transformed_data = event_transformer.transform(event_data)
         
-        # Extract required fields
-        try:
-            timestamp = transformed_data.get("timestamp")
-            level = transformed_data.get("level", "INFO")
-            agent_id = transformed_data.get("agent_id")
-            event_type = transformed_data.get("event_type")
-            channel = transformed_data.get("channel", "UNKNOWN")
-            
-            # Optional fields
-            direction = transformed_data.get("direction")
-            session_id = transformed_data.get("session_id")
-            duration_ms = transformed_data.get("duration_ms")
-            
-            # Check for caller information
-            caller_file = transformed_data.get("caller_file")
-            caller_line = transformed_data.get("caller_line")
-            caller_function = transformed_data.get("caller_function")
-            
-        except (KeyError, ValueError) as e:
-            # Log the error but don't raise an exception here as this is in a background task
-            logger.error(f"Error processing event: {str(e)}")
+        # Get or create event
+        event = await get_or_create_event(transformed_data, session)
+        
+        if not event:
+            logger.error("Failed to create event")
             return
-        
-        # Check if agent exists, create if not
-        try:
-            agent_result = await session.execute(
-                select(Agent).where(Agent.agent_id == agent_id)
-            )
-            agent = agent_result.scalars().first()
             
-            if not agent:
-                # Create new agent
-                agent = Agent(
-                    agent_id=agent_id,
-                    first_seen=timestamp,
-                    last_seen=timestamp
-                )
-                
-                # Set LLM provider if available from transformed data
-                if "data" in transformed_data and transformed_data["data"].get("model"):
-                    agent.llm_provider = transformed_data["data"].get("model")
-                
-                session.add(agent)
-            else:
-                # Update last seen
-                agent.last_seen = timestamp
-        except Exception as e:
-            logger.error(f"Error checking agent: {str(e)}")
-            # Continue anyway, we'll still try to store the event
-        
-        # Create event
-        try:
-            event = Event(
-                timestamp=timestamp,
-                level=level,
-                agent_id=agent_id,
-                event_type=event_type,
-                channel=channel,
-                direction=direction,
-                session_id=session_id,
-                data=transformed_data.get("data"),
-                duration_ms=duration_ms,
-                caller_file=caller_file,
-                caller_line=caller_line,
-                caller_function=caller_function
-            )
-            session.add(event)
-            await session.flush()  # Flush to get the ID
-            
-            # Process through business logic layer
+        # Process through business logic layer only if not already processed
+        if not event.is_processed:
             try:
                 # Create event processor
                 event_processor = EventProcessor()
@@ -111,81 +154,12 @@ async def process_event(event_data: Dict[str, Any], session: AsyncSession):
                 logger.info(f"Event {event.id} processed through business logic layer")
             except Exception as e:
                 logger.error(f"Error processing event {event.id} through business logic layer: {str(e)}")
-                # Continue anyway, we'll still commit the event
+        else:
+            logger.info(f"Event {event.id} already processed, skipping business logic")
             
-            # Find related event if this is a finish event
-            if event_type in ["LLM_call_finish", "call_finish"]:
-                related_event = await find_matching_start_event(agent_id, event, session)
-                
-                if related_event:
-                    # Create a relationship ID
-                    relationship_id = str(uuid.uuid4())
-                    
-                    # Update the current (finish) event
-                    event.direction = "incoming"
-                    event.relationship_id = relationship_id
-                    
-                    # Update the related (start) event
-                    await session.execute(
-                        update(Event)
-                        .where(Event.id == related_event.id)
-                        .values(
-                            direction="outgoing",
-                            relationship_id=relationship_id
-                        )
-                    )
-                    
-                    # Calculate duration if not already present
-                    if not duration_ms and related_event.timestamp:
-                        try:
-                            start_time = related_event.timestamp
-                            finish_time = timestamp
-                            if isinstance(start_time, datetime.datetime) and isinstance(finish_time, datetime.datetime):
-                                duration_ms = (finish_time - start_time).total_seconds() * 1000
-                                event.duration_ms = duration_ms
-                        except Exception as e:
-                            logger.error(f"Error calculating duration: {str(e)}")
-            
-            # If this is a start event, ensure direction is set
-            elif event_type in ["LLM_call_start", "call_start"]:
-                event.direction = "outgoing"
-                
-        except Exception as e:
-            logger.error(f"Error creating event: {str(e)}")
-            return
-        
-        # Check for session and update if needed
-        if session_id:
-            try:
-                session_result = await session.execute(
-                    select(Session).where(Session.session_id == session_id)
-                )
-                existing_session = session_result.scalars().first()
-                
-                if not existing_session:
-                    # Create new session
-                    new_session = Session(
-                        session_id=session_id,
-                        agent_id=agent_id,
-                        start_time=timestamp,
-                        total_events=1
-                    )
-                    session.add(new_session)
-                else:
-                    # Update session
-                    existing_session.end_time = timestamp
-                    if existing_session.total_events is None:
-                        existing_session.total_events = 1
-                    else:
-                        existing_session.total_events += 1
-            except Exception as e:
-                logger.error(f"Error updating session: {str(e)}")
-                # Continue anyway
-        
-        await session.commit()
     except Exception as e:
-        logger.error(f"Unhandled error in process_event: {str(e)}")
-        # We catch all exceptions to prevent background task failures
+        logger.error(f"Error processing event: {str(e)}")
+        # Don't raise the exception - just log it
 
 async def find_matching_start_event(agent_id: str, finish_event: Event, session: AsyncSession) -> Optional[Event]:
     """
@@ -254,46 +228,47 @@ async def find_matching_start_event(agent_id: str, finish_event: Event, session:
         logger.error(f"Error finding matching start event: {str(e)}")
         return None
 
-async def process_batch(event_data_list: List[Dict[str, Any]], session: AsyncSession):
-    """
-    Process a batch of telemetry events asynchronously.
-    This function handles database operations for storing multiple events.
+async def process_batch(event_data_list: List[Dict[str, Any]], db_session: AsyncSession):
+    """Process a batch of events in a transaction-safe manner.
     
     Args:
-        event_data_list: List of telemetry event data
-        session: Async SQLAlchemy session
+        event_data_list: List of event data dictionaries
+        db_session: Database session
     """
-    if not event_data_list:
-        logger.warning("Received empty batch to process")
-        return
+    # Transform all events first
+    transformed_events = []
+    for event_data in event_data_list:
+        transformed = event_transformer.transform(event_data)
+        transformed_events.append(transformed)
     
-    logger.info(f"Processing batch of {len(event_data_list)} events")
+    # Identify relationships between events in the batch
+    event_transformer._identify_relationships(transformed_events)
     
-    try:
-        # Sort events by timestamp to ensure proper session/conversation flow
-        sorted_events = sorted(
-            event_data_list, 
-            key=lambda e: datetime.datetime.fromisoformat(
-                e.get("timestamp", "1970-01-01T00:00:00").replace("Z", "+00:00")
-            )
-        )
-        
-        # Process init events first to ensure sessions are created
-        init_events = [e for e in sorted_events if e.get("event_type") == "monitor_init"]
-        regular_events = [e for e in sorted_events if e.get("event_type") != "monitor_init"]
-        
-        # Process events in order: init events first, then others
-        for event_data in init_events + regular_events:
-            try:
-                await process_event(event_data, session)
-            except Exception as e:
-                logger.error(f"Error processing event in batch: {str(e)}")
-                # Continue with next event
+    # Process each event, ensuring idempotency
+    processor = EventProcessor()
+    results = []
+    
+    for transformed_data in transformed_events:
+        try:
+            # Create or get existing event
+            event = await get_or_create_event(transformed_data, db_session)
+            if not event:
+                logger.warning(f"Failed to create event for data: {transformed_data}")
                 continue
+                
+            # Only process if not already processed
+            if not event.is_processed:
+                result = await processor.process_event(event, db_session)
+                if result:
+                    results.append(result)
+            else:
+                logger.info(f"Event {event.id} already processed, skipping")
+                results.append(event)
+                
+        except Exception as e:
+            logger.error(f"Error processing event in batch: {str(e)}")
     
-    except Exception as e:
-        logger.error(f"Unhandled error in process_batch: {str(e)}")
-        # We catch all exceptions to prevent background task failures
+    return results
 
 def validate_telemetry_event(event_data: Dict[str, Any]) -> List[str]:
     """
@@ -367,7 +342,7 @@ async def ingest_telemetry_batch(
             detail={"errors": all_errors}
         )
     
-    # Queue the batch for asynchronous processing
+    # Queue the batch for asynchronous processing using the new processor
     background_tasks.add_task(process_batch, event_data_list, db_session)
     
     # Return a quick acknowledgement

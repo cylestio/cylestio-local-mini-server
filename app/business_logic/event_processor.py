@@ -30,60 +30,60 @@ class EventProcessor:
         logger.info(f"Initialized EventProcessor with {len(self.extractors)} extractors")
     
     async def process_event(self, event: Event, db_session: AsyncSession) -> Event:
-        """Process a single event through extractors.
+        """Process a single event through extractors exactly once.
         
         Args:
             event: The event to process
             db_session: Database session for persistence
             
         Returns:
-            The processed event
+            The processed event or None if processing failed
         """
         if not event:
             logger.warning("Received empty event to process")
             return None
         
+        # Check if already processed to ensure idempotency
+        if event.is_processed:
+            logger.info(f"Event {event.id} already marked as processed, skipping")
+            return event
+        
         logger.info(f"Processing event {event.id} of type {event.event_type}")
         
-        # Process each extractor in a separate transaction to isolate failures
-        # Find applicable extractors for this event
+        # Find applicable extractors for this event by checking can_process for each
         applicable_extractors = [ext for ext in self.extractors if ext.can_process(event)]
         logger.info(f"Found {len(applicable_extractors)} applicable extractors for event {event.id}")
         
-        # Apply each extractor
-        for extractor in applicable_extractors:
-            try:
+        # Process ALL extractors in a SINGLE transaction
+        try:
+            # Apply each extractor
+            for extractor in applicable_extractors:
                 logger.debug(f"Applying extractor {extractor.get_name()} to event {event.id}")
                 await extractor.process(event, db_session)
-                await db_session.flush()  # Flush changes but don't commit yet
-            except IntegrityError as e:
-                # Handle integrity errors like duplicate constraint violations
-                logger.warning(f"Integrity error in extractor {extractor.get_name()} for event {event.id}: {str(e)}")
-                await db_session.rollback()  # Roll back the transaction
-            except Exception as e:
-                # Log the error but continue with other extractors
-                logger.error(f"Error in extractor {extractor.get_name()} for event {event.id}: {str(e)}")
-                await db_session.rollback()  # Roll back the transaction
-        
-        try:
-            # Mark event as processed
+            
+            # Mark event as processed ONLY after all extractors run
             event.is_processed = True
             await db_session.commit()
+            logger.info(f"Successfully processed event {event.id}")
             return event
+            
         except Exception as e:
-            logger.error(f"Error marking event {event.id} as processed: {str(e)}")
+            # If ANY extractor fails, roll back the ENTIRE transaction
+            logger.error(f"Error processing event {event.id}: {str(e)}")
             await db_session.rollback()
             return None
     
     async def process_events(self, events: List[Event], db_session: AsyncSession) -> List[Event]:
-        """Process multiple events through extractors.
+        """Process multiple events sequentially.
+        
+        Each event is processed in its own transaction to isolate failures.
         
         Args:
             events: The events to process
             db_session: Database session for persistence
             
         Returns:
-            The processed events
+            The list of successfully processed events
         """
         processed_events = []
         

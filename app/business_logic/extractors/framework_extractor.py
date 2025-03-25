@@ -60,7 +60,7 @@ class FrameworkExtractor(BaseExtractor):
         """
         try:
             # Extract framework details from the event
-            framework_details = await self._extract_framework_details(event)
+            framework_details = await self._extract_framework_details(event, db_session)
             
             if framework_details:
                 # Add to session
@@ -71,16 +71,20 @@ class FrameworkExtractor(BaseExtractor):
             # Log the error but allow processing to continue
             logger.error(f"Error extracting framework details for event {event.id}: {str(e)}")
     
-    async def _extract_framework_details(self, event) -> Optional[FrameworkDetails]:
+    async def _extract_framework_details(self, event, db_session) -> Optional[FrameworkDetails]:
         """Extract framework details from the event.
         
         Args:
             event: The event to extract framework details from
+            db_session: Database session for persistence
             
         Returns:
             FrameworkDetails model instance or None if no framework details found
         """
         try:
+            # No need to check for existing framework details - event processor guarantees
+            # this extractor runs exactly once per event
+            
             data = event.data
             framework_name = "unknown"
             framework_version = "unknown"

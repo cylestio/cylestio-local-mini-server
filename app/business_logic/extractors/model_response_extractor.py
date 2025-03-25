@@ -13,6 +13,7 @@ from app.business_logic.extractors.base import BaseExtractor, extractor_registry
 from app.models.token_usage import TokenUsage
 from app.models.performance_metric import PerformanceMetric
 from app.models.content_analysis import ContentAnalysis
+from sqlalchemy import select
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -67,41 +68,54 @@ class ModelResponseExtractor(BaseExtractor):
             The created TokenUsage object, or None if no token usage data
         """
         try:
+            # No need to check for existing token usage - event processor guarantees
+            # this extractor runs exactly once per event
+            
             data = event.data
             
             # Try multiple paths to handle different formats
-            usage = data.get("llm_output", {}).get("usage", {})
+            usage = None
+            model_name = None
+            
+            # Check in llm_output
+            if "llm_output" in data and "usage" in data["llm_output"]:
+                usage = data["llm_output"]["usage"]
+                model_name = data["llm_output"].get("model") or data["llm_output"].get("model_name")
             
             # Check in verbose format with message
-            if not usage and "response" in data:
-                # Try to extract from response.message.usage_metadata
-                message_data = data.get("response", {}).get("message", {})
-                if isinstance(message_data, dict):
-                    usage = message_data.get("usage_metadata", {})
+            elif "response" in data:
+                response = data["response"]
                 
-                # Sometimes it's nested in the text field - try to parse the tuple format
-                if not usage and "text" in data.get("response", {}):
-                    text_content = data.get("response", {}).get("text", "")
-                    # Look for usage_metadata in the string representation
-                    if "usage_metadata" in text_content:
-                        try:
-                            # This is a complex format with nested representation of AIMessage
-                            # Extract just the usage_metadata part
-                            start_idx = text_content.find("usage_metadata")
-                            if start_idx > 0:
-                                metadata_str = text_content[start_idx:text_content.find("}", start_idx) + 1]
-                                # Extract numbers from the string
-                                import re
-                                input_match = re.search(r"'input_tokens':\s*(\d+)", metadata_str)
-                                output_match = re.search(r"'output_tokens':\s*(\d+)", metadata_str)
-                                
-                                if input_match and output_match:
-                                    usage = {
-                                        "input_tokens": int(input_match.group(1)),
-                                        "output_tokens": int(output_match.group(1))
-                                    }
-                        except Exception as e:
-                            logger.error(f"Error parsing token usage from text: {str(e)}")
+                # Check in llm_output within response
+                if "llm_output" in response and "usage" in response["llm_output"]:
+                    usage = response["llm_output"]["usage"]
+                    model_name = response["llm_output"].get("model") or response["llm_output"].get("model_name")
+                
+                # Check in message's usage_metadata
+                elif "message" in response and isinstance(response["message"], dict):
+                    message = response["message"]
+                    if "usage_metadata" in message:
+                        usage = message["usage_metadata"]
+                        if "input_token_details" in usage:
+                            # Add cache details from input_token_details
+                            details = usage["input_token_details"]
+                            usage["cache_read_input_tokens"] = details.get("cache_read", 0)
+                            usage["cache_creation_input_tokens"] = details.get("cache_creation", 0)
+                
+                # Check directly in response
+                elif "usage" in response:
+                    usage = response["usage"]
+                
+                # Try to extract model name
+                if not model_name:
+                    model_name = response.get("model") or response.get("model_name")
+            
+            # Look directly in data for model info
+            if not model_name and "model" in data:
+                if isinstance(data["model"], dict):
+                    model_name = data["model"].get("name")
+                else:
+                    model_name = data["model"]
             
             # If we have usage data, create the token usage object
             if usage:
@@ -113,12 +127,9 @@ class ModelResponseExtractor(BaseExtractor):
                 if total_tokens == 0:
                     total_tokens = input_tokens + output_tokens
                 
-                # Get model information
-                model_name = None
-                if "model" in data:
-                    model_name = data.get("model")
-                elif "llm_output" in data and "model" in data.get("llm_output", {}):
-                    model_name = data.get("llm_output", {}).get("model")
+                # Extract cache token information
+                cache_read_tokens = int(usage.get("cache_read_input_tokens", 0))
+                cache_creation_tokens = int(usage.get("cache_creation_input_tokens", 0))
                 
                 # Create token usage object
                 token_usage = TokenUsage(
@@ -126,6 +137,8 @@ class ModelResponseExtractor(BaseExtractor):
                     input_tokens=input_tokens,
                     output_tokens=output_tokens,
                     total_tokens=total_tokens,
+                    cache_read_tokens=cache_read_tokens,
+                    cache_creation_tokens=cache_creation_tokens,
                     model=model_name
                 )
                 
@@ -152,6 +165,9 @@ class ModelResponseExtractor(BaseExtractor):
             The created PerformanceMetric object, or None if no performance data
         """
         try:
+            # No need to check for existing performance metrics - event processor guarantees
+            # this extractor runs exactly once per event
+            
             data = event.data
             
             # Try to get performance data
@@ -201,6 +217,9 @@ class ModelResponseExtractor(BaseExtractor):
             The created ContentAnalysis object, or None if no content
         """
         try:
+            # No need to check for existing content - event processor guarantees
+            # this extractor runs exactly once per event
+            
             data = event.data
             
             # Try to get response content

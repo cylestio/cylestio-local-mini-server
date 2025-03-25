@@ -9,6 +9,7 @@ from typing import Dict, Any, Optional
 
 from app.models.model_details import ModelDetails
 from app.business_logic.extractors.base import BaseExtractor
+from sqlalchemy import select
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -50,23 +51,27 @@ class ModelInfoExtractor(BaseExtractor):
             event: The event to process
             db_session: Database session for persistence
         """
-        model_details = await self._extract_model_details(event)
+        model_details = await self._extract_model_details(event, db_session)
         
         if model_details:
             db_session.add(model_details)
     
-    async def _extract_model_details(self, event) -> Optional[ModelDetails]:
+    async def _extract_model_details(self, event, db_session) -> Optional[ModelDetails]:
         """Extract model details from various event formats.
         
         Handles different JSON structures based on event type.
         
         Args:
             event: The event to extract from
+            db_session: Database session for persistence
             
         Returns:
             ModelDetails object or None if no data found
         """
         try:
+            # No need to check for existing model details - event processor guarantees
+            # this extractor runs exactly once per event
+            
             # Get event data
             data = event.data
             

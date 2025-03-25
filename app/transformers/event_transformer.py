@@ -50,10 +50,21 @@ class EventTransformer(BaseTransformer):
         Returns:
             List of transformed events with relationship data
         """
+        # Normalize all timestamps first to avoid type mismatches
+        normalized_events = []
+        for event in events:
+            try:
+                normalized = self._normalize_timestamps(event)
+                normalized_events.append(normalized)
+            except Exception as e:
+                logger.error(f"Error normalizing event timestamps: {str(e)}")
+                # Still include the original event to avoid data loss
+                normalized_events.append(event)
+        
         transformed_events = []
         
         # First pass: transform individual events
-        for event in events:
+        for event in normalized_events:
             transformed = self.transform(event)
             transformed_events.append(transformed)
         
@@ -61,6 +72,46 @@ class EventTransformer(BaseTransformer):
         self._identify_relationships(transformed_events)
         
         return transformed_events
+    
+    def _normalize_timestamps(self, event: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Normalize all timestamp fields in the event to ensure they are in a consistent format.
+        
+        Args:
+            event: Raw event data
+            
+        Returns:
+            Event with normalized timestamps
+        """
+        # Make a copy to avoid modifying the original
+        normalized = event.copy()
+        
+        # Handle the primary timestamp field
+        if "timestamp" in normalized:
+            timestamp = normalized["timestamp"]
+            if isinstance(timestamp, str):
+                # Standardize string timestamp format
+                try:
+                    normalized["timestamp"] = datetime.datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+                except Exception as e:
+                    logger.warning(f"Could not parse timestamp '{timestamp}': {str(e)}")
+        
+        # Handle nested timestamps in data field
+        if "data" in normalized and isinstance(normalized["data"], dict):
+            data = normalized["data"].copy()
+            
+            # Check common timestamp fields in data
+            for field in ["timestamp", "patch_time", "start_time", "end_time", "request_time", "response_time"]:
+                if field in data and isinstance(data[field], str):
+                    try:
+                        data[field] = datetime.datetime.fromisoformat(data[field].replace("Z", "+00:00"))
+                    except Exception:
+                        # Leave as is if parsing fails
+                        pass
+            
+            normalized["data"] = data
+        
+        return normalized
     
     def _identify_relationships(self, events: List[Dict[str, Any]]) -> None:
         """
@@ -82,15 +133,13 @@ class EventTransformer(BaseTransformer):
             event_type = event.get("event_type")
             agent_id = event.get("agent_id")
             
-            # Create a composite key from agent_id and timestamp to handle concurrent events
-            # We'll use microsecond precision for the timestamp
-            timestamp = event.get("timestamp")
-            if isinstance(timestamp, datetime.datetime):
-                timestamp_str = timestamp.strftime("%Y%m%d%H%M%S%f")
-            else:
-                timestamp_str = str(timestamp)
+            # Skip events without a type or agent_id
+            if not event_type or not agent_id:
+                continue
             
-            key = f"{agent_id}_{timestamp_str}"
+            # Create a less complex composite key - just agent_id and event_counter
+            # This avoids timestamp parsing issues completely
+            key = f"{agent_id}_{i}"  # Use the index in the array as a simple counter
             
             # Categorize by event type
             if event_type == "LLM_call_start":
@@ -126,76 +175,77 @@ class EventTransformer(BaseTransformer):
         """
         # For each start event, try to find a matching finish event
         for key, start_idx in starts.items():
-            # Extract agent_id and approximate timestamp from key
-            parts = key.split("_")
-            agent_id = parts[0]
-            time_part = "_".join(parts[1:])
-            
-            # Find potential matching finish events
-            # First, try exact match
+            # First extract the agent_id from the start event directly
+            agent_id = events[start_idx].get("agent_id")
+            if not agent_id:
+                continue
+                
+            # First try: exact key match (most reliable)
             if key in finishes:
                 finish_idx = finishes[key]
+                self._link_events(events, start_idx, finish_idx)
+                continue
                 
-                # Create a relationship ID
-                relationship_id = str(uuid.uuid4())
+            # Second try: find any finishes from the same agent
+            # Instead of trying to sort by timestamp (which causes string/int problems),
+            # we'll collect all finishes for this agent and use a different strategy
+            agent_finishes = []
+            for finish_key, finish_idx in finishes.items():
+                finish_agent_id = events[finish_idx].get("agent_id")
+                if finish_agent_id == agent_id:
+                    agent_finishes.append((finish_key, finish_idx))
+                    
+            if not agent_finishes:
+                continue  # No matching finishes for this agent
                 
-                # Update the start event
-                events[start_idx]["related_event_id"] = events[finish_idx]["id"] if "id" in events[finish_idx] else None
-                events[start_idx]["direction"] = "outgoing"
-                events[start_idx]["relationship_id"] = relationship_id
+            # Strategy: Match events based on positional ordering
+            # This avoids problematic string/int comparisons entirely
+            # Pick the first unmatched finish event for this agent
+            # This assumes events typically arrive in chronological order
+            for finish_key, finish_idx in agent_finishes:
+                # Check if this finish event is already linked to another start
+                if "relationship_id" not in events[finish_idx]:
+                    self._link_events(events, start_idx, finish_idx)
+                    break
+                    
+    def _link_events(self, events, start_idx, finish_idx):
+        """Helper method to link a start and finish event pair"""
+        # Create a relationship ID
+        relationship_id = str(uuid.uuid4())
+        
+        # Update the start event
+        events[start_idx]["related_event_id"] = events[finish_idx].get("id")
+        events[start_idx]["direction"] = "outgoing"
+        events[start_idx]["relationship_id"] = relationship_id
+        
+        # Update the finish event
+        events[finish_idx]["related_event_id"] = events[start_idx].get("id")
+        events[finish_idx]["direction"] = "incoming"
+        events[finish_idx]["relationship_id"] = relationship_id
+        
+        # Calculate duration if not already present
+        if "duration_ms" not in events[finish_idx] and "timestamp" in events[start_idx] and "timestamp" in events[finish_idx]:
+            try:
+                start_time = events[start_idx]["timestamp"]
+                finish_time = events[finish_idx]["timestamp"]
                 
-                # Update the finish event
-                events[finish_idx]["related_event_id"] = events[start_idx]["id"] if "id" in events[start_idx] else None
-                events[finish_idx]["direction"] = "incoming"
-                events[finish_idx]["relationship_id"] = relationship_id
-                
-                # Calculate duration if not already present
-                if "duration_ms" not in events[finish_idx] and "timestamp" in events[start_idx] and "timestamp" in events[finish_idx]:
+                # Ensure both timestamps are datetime objects
+                if isinstance(start_time, str):
                     try:
-                        start_time = events[start_idx]["timestamp"]
-                        finish_time = events[finish_idx]["timestamp"]
-                        if isinstance(start_time, datetime.datetime) and isinstance(finish_time, datetime.datetime):
-                            duration_ms = (finish_time - start_time).total_seconds() * 1000
-                            events[finish_idx]["duration_ms"] = duration_ms
-                    except Exception as e:
-                        logger.error(f"Error calculating duration: {str(e)}")
-            
-            # If no exact match, try to find the closest matching finish event
-            # This handles cases where timestamps are not exactly the same
-            else:
-                # Find finish events from the same agent
-                candidate_finishes = []
-                for finish_key, finish_idx in finishes.items():
-                    if finish_key.startswith(f"{agent_id}_"):
-                        candidate_finishes.append((finish_key, finish_idx))
+                        start_time = datetime.datetime.fromisoformat(start_time.replace("Z", "+00:00"))
+                    except:
+                        # If parsing fails, skip duration calculation
+                        return
+                        
+                if isinstance(finish_time, str):
+                    try:
+                        finish_time = datetime.datetime.fromisoformat(finish_time.replace("Z", "+00:00"))
+                    except:
+                        # If parsing fails, skip duration calculation
+                        return
                 
-                if candidate_finishes:
-                    # Sort by time difference (approximate)
-                    candidate_finishes.sort(key=lambda x: abs(int(x[0].split("_")[1]) - int(time_part)))
-                    
-                    # Use the closest one
-                    _, finish_idx = candidate_finishes[0]
-                    
-                    # Create a relationship ID
-                    relationship_id = str(uuid.uuid4())
-                    
-                    # Update the start event
-                    events[start_idx]["related_event_id"] = events[finish_idx]["id"] if "id" in events[finish_idx] else None
-                    events[start_idx]["direction"] = "outgoing"
-                    events[start_idx]["relationship_id"] = relationship_id
-                    
-                    # Update the finish event
-                    events[finish_idx]["related_event_id"] = events[start_idx]["id"] if "id" in events[start_idx] else None
-                    events[finish_idx]["direction"] = "incoming"  
-                    events[finish_idx]["relationship_id"] = relationship_id
-                    
-                    # Calculate duration if not already present
-                    if "duration_ms" not in events[finish_idx] and "timestamp" in events[start_idx] and "timestamp" in events[finish_idx]:
-                        try:
-                            start_time = events[start_idx]["timestamp"]
-                            finish_time = events[finish_idx]["timestamp"]
-                            if isinstance(start_time, datetime.datetime) and isinstance(finish_time, datetime.datetime):
-                                duration_ms = (finish_time - start_time).total_seconds() * 1000
-                                events[finish_idx]["duration_ms"] = duration_ms
-                        except Exception as e:
-                            logger.error(f"Error calculating duration: {str(e)}") 
+                if isinstance(start_time, datetime.datetime) and isinstance(finish_time, datetime.datetime):
+                    duration_ms = (finish_time - start_time).total_seconds() * 1000
+                    events[finish_idx]["duration_ms"] = duration_ms
+            except Exception as e:
+                logger.error(f"Error calculating duration: {str(e)}") 

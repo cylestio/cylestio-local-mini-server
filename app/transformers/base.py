@@ -60,8 +60,7 @@ class BaseTransformer(ABC):
         # Extract basic fields
         try:
             timestamp = raw_event.get("timestamp")
-            if isinstance(timestamp, str):
-                timestamp = datetime.datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+            timestamp = self.normalize_timestamp(timestamp)
             
             transformed = {
                 "timestamp": timestamp,
@@ -92,4 +91,58 @@ class BaseTransformer(ABC):
                 "event_type": raw_event.get("event_type", "ERROR"),
                 "channel": "ERROR",
                 "data": raw_event
-            } 
+            }
+            
+    @staticmethod
+    def normalize_timestamp(timestamp):
+        """
+        Convert a timestamp to a datetime object if it's not already one.
+        
+        Args:
+            timestamp: The timestamp to normalize (string, datetime, or other format)
+            
+        Returns:
+            A datetime object, or None if conversion fails
+        """
+        if timestamp is None:
+            return datetime.datetime.now()
+            
+        if isinstance(timestamp, datetime.datetime):
+            return timestamp
+            
+        if isinstance(timestamp, str):
+            try:
+                # Handle common ISO format variations
+                if 'Z' in timestamp:
+                    # Replace Z with +00:00 for proper UTC handling
+                    timestamp = timestamp.replace('Z', '+00:00')
+                elif 'T' in timestamp and '+' not in timestamp and not any(c in timestamp[10:] for c in ['-', '+']):
+                    # Add timezone if missing
+                    timestamp = timestamp + '+00:00'
+                    
+                return datetime.datetime.fromisoformat(timestamp)
+            except ValueError:
+                try:
+                    # Try more flexible parsing as fallback
+                    import dateutil.parser
+                    return dateutil.parser.parse(timestamp)
+                except (ImportError, ValueError):
+                    # If dateutil is not available or parsing fails
+                    logger.warning(f"Could not parse timestamp: {timestamp}")
+                    return datetime.datetime.now()
+        
+        # For numeric timestamps (assuming unix timestamps)
+        try:
+            if isinstance(timestamp, (int, float)):
+                # Determine if this is seconds or milliseconds based on magnitude
+                timestamp_value = float(timestamp)  # Ensure it's a number
+                if timestamp_value > 1e10:  # Likely milliseconds
+                    return datetime.datetime.fromtimestamp(timestamp_value / 1000)
+                else:  # Likely seconds
+                    return datetime.datetime.fromtimestamp(timestamp_value)
+        except (ValueError, OverflowError, OSError, TypeError):
+            logger.warning(f"Could not convert numeric timestamp: {timestamp}")
+        
+        # If all else fails
+        logger.warning(f"Using current time for unparseable timestamp: {timestamp}")
+        return datetime.datetime.now() 

@@ -193,8 +193,8 @@ app.openapi = custom_openapi
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run the Cylestio Mini-Local Server")
     parser.add_argument("--host", default="0.0.0.0", help="Host to bind the server to")
-    parser.add_argument("--port", type=int, default=int(os.environ.get("CYLESTIO_PORT", 8080)), 
-                        help="Port to bind the server to (default: 8080)")
+    parser.add_argument("--port", type=int, default=int(os.environ.get("CYLESTIO_PORT", 8000)), 
+                        help="Port to bind the server to (default: 8000)")
     args = parser.parse_args()
     
     uvicorn.run("app.main:app", host=args.host, port=args.port, reload=True) 
