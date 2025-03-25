@@ -21,19 +21,24 @@ For detailed installation instructions, see [INSTALLATION.md](INSTALLATION.md).
 
 Quick start:
 
-1. Clone the repository:
+1. Install from PyPI:
+   ```bash
+   pip install cylestio-local-mini-server
+   ```
+
+   Or clone the repository:
    ```bash
    git clone https://github.com/cylestio/cylestio-local-mini-server.git
    cd cylestio-local-mini-server
    ```
 
-2. Create a virtual environment:
+2. If cloning the repository, create a virtual environment:
    ```bash
    python -m venv venv
    source venv/bin/activate  # On Windows: venv\Scripts\activate
    ```
 
-3. Install dependencies:
+3. If cloning the repository, install dependencies:
    ```bash
    pip install -r requirements.txt
    ```
@@ -42,8 +47,12 @@ Quick start:
 
 ### Starting the Server
 
-Start the server with the following command:
+If installed from PyPI:
+```bash
+cylestio-server --port 8000
+```
 
+Or manually:
 ```bash
 uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```

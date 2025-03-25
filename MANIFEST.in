@@ -1,0 +1,22 @@
+include LICENSE
+include README.md
+include INSTALLATION.md
+include API_DOCUMENTATION.md
+include VERSION
+include requirements.txt
+
+recursive-include app *
+recursive-exclude app/__pycache__ *
+recursive-exclude app/**/__pycache__ *
+recursive-exclude app/.pytest_cache *
+recursive-exclude app/**/test_* *
+recursive-exclude app/test_* *
+recursive-exclude app/tests *
+
+global-exclude *.pyc
+global-exclude *.pyo
+global-exclude *__pycache__*
+global-exclude *.db
+global-exclude *.sqlite
+global-exclude *.sqlite3
+global-exclude *.log 

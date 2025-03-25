@@ -193,3 +193,10 @@ resources/
 # OS specific files
 .DS_Store
 Thumbs.db
+
+# Local development
+/migrations/
+server_output.log
+test_data/
+.pytest_cache/
+app/.pytest_cache/

@@ -10,7 +10,17 @@ This guide provides instructions for installing and setting up the Cylestio Mini
 
 ## Installation Steps
 
-### 1. Clone or Download the Repository
+### Option 1: Install from PyPI (Recommended)
+
+```bash
+pip install cylestio-local-mini-server
+```
+
+This is the easiest way to install the Cylestio Mini-Local Server.
+
+### Option 2: Manual Installation
+
+#### 1. Clone or Download the Repository
 
 ```bash
 git clone https://github.com/cylestio/cylestio-local-mini-server.git
@@ -48,6 +58,14 @@ python -m pytest tests/
 ## Running the Server
 
 To start the Cylestio Mini-Local Server:
+
+### If installed from PyPI:
+
+```bash
+cylestio-server --host 0.0.0.0 --port 8000
+```
+
+### If manually installed:
 
 ```bash
 uvicorn app.main:app --host 0.0.0.0 --port 8000

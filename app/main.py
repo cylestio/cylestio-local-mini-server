@@ -197,4 +197,18 @@ if __name__ == "__main__":
                         help="Port to bind the server to (default: 8000)")
     args = parser.parse_args()
     
-    uvicorn.run("app.main:app", host=args.host, port=args.port, reload=True) 
+    uvicorn.run("app.main:app", host=args.host, port=args.port, reload=True)
+
+def run_server():
+    """
+    Entry point for the console script. This is called when running the command
+    installed by pip (cylestio-server).
+    """
+    parser = argparse.ArgumentParser(description="Run the Cylestio Mini-Local Server")
+    parser.add_argument("--host", default="0.0.0.0", help="Host to bind the server to")
+    parser.add_argument("--port", type=int, default=int(os.environ.get("CYLESTIO_PORT", 8000)), 
+                        help="Port to bind the server to (default: 8000)")
+    parser.add_argument("--reload", action="store_true", help="Enable auto-reload on code changes")
+    args = parser.parse_args()
+    
+    uvicorn.run("app.main:app", host=args.host, port=args.port, reload=args.reload) 
